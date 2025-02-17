@@ -1,4 +1,4 @@
-package exceptions
+package com.rezo.exceptions
 
 import zio.http.Status
 
@@ -9,4 +9,8 @@ object Exceptions {
   trait ServerException extends RezoException {
     def status: Status.Error = Status.InternalServerError
   }
+
+  trait IngestionException extends RezoException
+
+  final case class ParseException(error: String) extends IngestionException {}
 }
