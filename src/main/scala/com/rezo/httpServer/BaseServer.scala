@@ -10,6 +10,8 @@ trait BaseServer extends ZIOAppDefault {
   val kafkaRoutes: KafkaRoutes
 
   def startServer: ZIO[Any, Throwable, Nothing] = {
-    Server.serve(kafkaRoutes.routes).provide(Server.defaultWithPort(serverMetadataConfig.port))
+    Server
+      .serve(kafkaRoutes.routes)
+      .provide(Server.defaultWithPort(serverMetadataConfig.port))
   }
 }

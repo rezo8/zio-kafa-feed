@@ -5,8 +5,7 @@ import com.rezo.httpServer.BaseServer
 import com.rezo.httpServer.routes.KafkaRoutes
 import exceptions.Exceptions.ConfigLoadException
 import pureconfig.ConfigSource
-import zio.http.*
-import zio.{ZIO, ZIOAppDefault, ZLayer}
+import zio.{ZIO, ZIOAppDefault}
 
 object Main extends ZIOAppDefault with BaseServer { env =>
 
