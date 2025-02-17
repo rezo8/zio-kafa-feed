@@ -16,6 +16,7 @@ lazy val root = project
       "dev.zio" %% "zio-http" % "3.0.1",
       "dev.zio" %% "zio-nio" % "2.0.2",
       "dev.zio" %% "zio-streams" % "2.1.15",
+      "dev.zio" %% "zio-kafka" % "2.10.0",
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-generic" % circeVersion,
       "io.circe" %% "circe-parser" % circeVersion
