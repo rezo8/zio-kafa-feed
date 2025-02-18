@@ -19,15 +19,14 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
           val count = req.url
             .queryParams("count")
             .headOption
-            .flatMap(_.toIntOption)
-            .getOrElse(defaultCount)
+            .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
 
           val result = for {
             readPeople <- messageReader.processForAllPartitionsZio(
               topicName,
               consumerConfig.partitionList,
-              10,
-              10
+              offset,
+              count
             )
             response = LoadPeopleResponse(readPeople)
           } yield response
