@@ -13,4 +13,10 @@ object Exceptions {
   trait IngestionException extends RezoException
 
   final case class ParseException(error: String) extends IngestionException {}
+
+  trait KafkaException extends RezoException
+  case class PublishError(throwable: Throwable) extends KafkaException {
+    override def getCause: Throwable = throwable
+    override def getMessage: String = throwable.getMessage
+  }
 }

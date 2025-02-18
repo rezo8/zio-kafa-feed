@@ -1,7 +1,11 @@
 package com.rezo.objects
 
-import io.circe.generic.semiauto.deriveDecoder
-import io.circe.{Decoder, HCursor, Json}
+import io.circe.*
+import io.circe.generic.semiauto.*
+import io.circe.parser.*
+import io.circe.syntax.*
+import zio.*
+import zio.kafka.serde.*
 
 case class CtRoot(
     ctRoot: List[Json]
@@ -27,6 +31,13 @@ case class Person(
 
 object Person {
   implicit val personDecoder: Decoder[Person] = deriveDecoder[Person]
+  implicit val personEncoder: Encoder[Person] = deriveEncoder[Person]
+
+  implicit val serde: Serde[Any, Person] =
+    Serde.string.inmapZIO(json => ZIO.fromEither(decode[Person](json)))(
+      person => ZIO.succeed(person.asJson.noSpaces)
+    )
+
 }
 
 case class Address(
@@ -45,4 +56,6 @@ object Address {
     } yield {
       new Address(street, town, postcode)
     }
+
+  implicit val addressEncoder: Encoder[Address] = deriveEncoder[Address]
 }
