@@ -1,9 +1,9 @@
 package com.rezo
 
 import com.rezo.config.{DerivedConfig, ServerConfig, ServerMetadataConfig}
+import com.rezo.exceptions.Exceptions.ConfigLoadException
 import com.rezo.httpServer.BaseServer
 import com.rezo.httpServer.routes.KafkaRoutes
-import exceptions.Exceptions.ConfigLoadException
 import pureconfig.ConfigSource
 import zio.{ZIO, ZIOAppDefault}
 
@@ -17,7 +17,9 @@ object Main extends ZIOAppDefault with BaseServer { env =>
 
   override val serverMetadataConfig: ServerMetadataConfig =
     config.serverMetadataConfig
-  override val kafkaRoutes: KafkaRoutes = new KafkaRoutes
+  override val kafkaRoutes: KafkaRoutes = new KafkaRoutes(
+    config.consumerConfig
+  )
 
   private def appLogic: ZIO[Any, Throwable, Nothing] = {
     for {

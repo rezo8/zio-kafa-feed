@@ -1,10 +1,15 @@
 package com.rezo.httpServer.routes
 
+import com.rezo.config.KafkaConsumerConfig
+import com.rezo.httpServer.Responses.LoadPeopleResponse
+import com.rezo.services.MessageReader
+import io.circe.syntax.*
 import zio.http.*
 
-class KafkaRoutes extends RouteContainer {
-
+class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
   private val defaultCount = 10
+  private val messageReader = new MessageReader(consumerConfig)
+
   override def routes: Routes[Any, Response] =
     Routes(
       Method.GET / "topic" / zio.http.string("topicName") / zio.http.int(
@@ -14,11 +19,29 @@ class KafkaRoutes extends RouteContainer {
           val count = req.url
             .queryParams("count")
             .headOption
-            .flatMap(_.toIntOption)
-            .getOrElse(defaultCount)
+            .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
 
-          Response.text(
-            s"received topicName [$topicName] with offset [$offset] and count [$count]"
+          val result = for {
+            readPeople <- messageReader.processForAllPartitionsZio(
+              topicName,
+              consumerConfig.partitionList,
+              offset,
+              count
+            )
+            response = LoadPeopleResponse(readPeople)
+          } yield response
+
+          result.fold(
+            error => {
+              Response
+                .error(Status.InternalServerError, message = error.getMessage)
+            },
+            resp =>
+              Response.json(
+                resp
+                  .asJson(LoadPeopleResponse.loadPeopleResponseEncoder)
+                  .toString
+              )
           )
         }
       }

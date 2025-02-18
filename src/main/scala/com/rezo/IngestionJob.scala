@@ -21,7 +21,7 @@ object IngestionJob extends ZIOAppDefault {
 
   private val filePath = "random-people-data.json"
 
-  val producer: ZLayer[Any, Throwable, Producer] =
+  private val producer: ZLayer[Any, Throwable, Producer] =
     ZLayer.scoped(
       Producer.make(ProducerSettings(config.publisherConfig.bootstrapServers))
     )

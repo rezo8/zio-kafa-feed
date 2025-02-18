@@ -19,6 +19,7 @@ lazy val root = project
       "dev.zio" %% "zio-kafka" % "2.10.0",
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-generic" % circeVersion,
-      "io.circe" %% "circe-parser" % circeVersion
+      "io.circe" %% "circe-parser" % circeVersion,
+      "org.apache.kafka" % "kafka-clients" % "3.9.0"
     )
   )

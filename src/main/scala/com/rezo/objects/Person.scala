@@ -52,7 +52,10 @@ object Address {
     for {
       street <- c.downField("street").as[String]
       town <- c.downField("town").as[String]
-      postcode <- c.downField("postode").as[String]
+      postcode <- c
+        .downField("postcode")
+        .as[String]
+        .orElse(c.downField("postode").as[String])
     } yield {
       new Address(street, town, postcode)
     }
