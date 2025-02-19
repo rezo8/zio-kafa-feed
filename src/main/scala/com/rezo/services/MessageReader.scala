@@ -16,16 +16,12 @@ import java.util.Properties
 import scala.jdk.CollectionConverters.*
 
 class MessageReader(config: KafkaConsumerConfig) {
-  private def createConsumer(
-      bootstrapServers: String,
-      groupId: String
-  ) = {
+  private def createConsumer(bootstrapServers: String) = {
     val props = new Properties()
     props.put(
       ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
       bootstrapServers
     )
-    props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId)
     props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
     props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
     props.put(
@@ -58,10 +54,7 @@ class MessageReader(config: KafkaConsumerConfig) {
       offset: Int,
       count: Int
   ): ZIO[Any, Throwable, List[Person]] = {
-    val consumer = createConsumer(
-      config.bootstrapServers,
-      config.groupId
-    )
+    val consumer = createConsumer(config.bootstrapServers)
     val topicPartition = TopicPartition(topic, partition)
     for {
       _ <- ZIO.attempt(

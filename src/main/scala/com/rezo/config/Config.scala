@@ -11,8 +11,8 @@ case class ServerConfig(
 ) extends DerivedConfig
 case class ServerMetadataConfig(port: Int)
 case class KafkaConsumerConfig(
+    consumerCount: Int,
     bootstrapServers: String,
-    groupId: String,
     topicName: String,
     partitionList: List[Int]
 )

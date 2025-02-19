@@ -30,6 +30,10 @@ object Main extends ZIOAppDefault with BaseServer { env =>
   private def cleanup = {
     // Fortunately ZIO Http Server comes with graceful shutdown built in: https://github.com/zio/zio-http/pull/2099/files
     println("shutting down")
+    for {
+      _ <- ZIO.logInfo("cleaning up resources")
+      cleanupKafka <- kafkaRoutes.cleanUp()
+    } yield ()
     ZIO.unit
   }
 

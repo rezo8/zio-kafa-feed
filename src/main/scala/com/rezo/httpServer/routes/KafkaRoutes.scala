@@ -4,11 +4,15 @@ import com.rezo.config.KafkaConsumerConfig
 import com.rezo.httpServer.Responses.LoadPeopleResponse
 import com.rezo.services.MessageReader
 import io.circe.syntax.*
+import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
+import zio.ZIO
 import zio.http.*
+
+import java.util.Properties
+import scala.util.Random
 
 class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
   private val defaultCount = 10
-  private val messageReader = new MessageReader(consumerConfig)
 
   override def routes: Routes[Any, Response] =
     Routes(
@@ -21,8 +25,10 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
             .headOption
             .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
 
+          val requestMessageReader = new MessageReader(consumerConfig)
+
           val result = for {
-            readPeople <- messageReader.processForAllPartitionsZio(
+            readPeople <- requestMessageReader.processForAllPartitionsZio(
               topicName,
               consumerConfig.partitionList,
               offset,
@@ -46,4 +52,12 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
         }
       }
     )
+
+  def cleanUp(): ZIO[Any, Throwable, Unit] = {
+    for {
+      //      _ <- ZIO.attempt(consumerPool.foreach(x => x.close()))
+      _ <- ZIO.logInfo("closed all consumers")
+    } yield ()
+  }
+
 }
