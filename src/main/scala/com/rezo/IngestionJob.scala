@@ -1,18 +1,20 @@
 package com.rezo
 
 import com.rezo.config.{DerivedConfig, IngestionJobConfig}
-import com.rezo.exceptions.Exceptions.{ConfigLoadException, PublishError}
+import com.rezo.exceptions.Exceptions.ConfigLoadException
 import com.rezo.objects.{CtRoot, Person}
 import io.circe.Error
 import io.circe.parser.*
+import org.apache.kafka.clients.producer.ProducerRecord
 import pureconfig.ConfigSource
 import zio.*
 import zio.kafka.producer.{Producer, ProducerSettings}
 import zio.kafka.serde.Serde
 import zio.stream.*
 
-object IngestionJob extends ZIOAppDefault {
+import java.util.concurrent.TimeUnit
 
+object IngestionJob extends ZIOAppDefault {
   val config: IngestionJobConfig = ConfigSource.default
     .at("ingestion-job")
     .load[DerivedConfig]
@@ -25,34 +27,6 @@ object IngestionJob extends ZIOAppDefault {
     ZLayer.scoped(
       Producer.make(ProducerSettings(config.publisherConfig.bootstrapServers))
     )
-
-  private def produce(
-      personEither: Either[io.circe.Error, Person]
-  ): ZIO[Any, Throwable, Int] = {
-    personEither match {
-      case Right(person) =>
-        Producer
-          .produce(
-            topic = config.publisherConfig.topicName,
-            key = person._id,
-            value = person,
-            keySerializer = Serde.string,
-            valueSerializer = Person.serde
-          )
-          .mapError(x => {
-            println(x.getMessage)
-            PublishError(x)
-          })
-          .map(x =>
-            println(
-              s"Successfully published to ${x.offset()} on partition ${x.partition()}"
-            )
-          )
-          .as(1)
-          .provideLayer(producer)
-      case Left(_) => ZIO.succeed(0)
-    }
-  }
 
   private def loadJson: ZIO[Any, Throwable, List[Either[Error, Person]]] = for {
     jsonString <- ZStream
@@ -69,13 +43,29 @@ object IngestionJob extends ZIOAppDefault {
       .map(_.ctRoot.map(_.as[Person]))
   } yield people
 
-  override def run: ZIO[Any, Throwable, Int] = {
-    for {
+  override def run: ZIO[Any, Throwable, Unit] = {
+    (for {
       persons <- loadJson
-      (validPersons, invalidPersons) = persons.partition(_.isRight)
-      _ <- ZIO.foreachDiscard(validPersons)(
-        produce
-      ) // this is a nice method because it doesn't fail if one fails.
-    } yield (1)
+      validPersons = persons.collect { case Right(person) => person }
+      producer <- ZIO.service[Producer]
+      startTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      successfulPublishes <- ZStream
+        .fromIterable(as = validPersons, chunkSize = config.batchSize)
+        .map(person => {
+          ProducerRecord(
+            config.publisherConfig.topicName,
+            person._id,
+            person
+          )
+        })
+        .via(producer.produceAll(Serde.string, Person.serde))
+        .runFold(0) { (acc, _) =>
+          acc + 1
+        }
+      endTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      _ <- ZIO.logInfo(
+        s"Successfully published $successfulPublishes records in ${endTime - startTime} ms."
+      )
+    } yield ()).provideLayer(producer)
   }
 }

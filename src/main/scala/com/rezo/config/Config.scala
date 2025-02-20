@@ -20,5 +20,6 @@ case class KafkaConsumerConfig(
 // TODO rename to producerConfig
 case class PublisherConfig(topicName: String, bootstrapServers: List[String])
 case class IngestionJobConfig(
-    publisherConfig: PublisherConfig
+    publisherConfig: PublisherConfig,
+    batchSize: Int
 ) extends DerivedConfig
