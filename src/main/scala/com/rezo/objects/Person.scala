@@ -20,7 +20,7 @@ case class Person(
     name: String,
     dob: String,
     address: Address,
-    telephone: String, // TODO validation
+    telephone: String,
     pets: List[String],
     score: Double,
     email: String,

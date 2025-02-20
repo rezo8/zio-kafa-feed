@@ -14,4 +14,5 @@ trait BaseServer extends ZIOAppDefault {
       .serve(kafkaRoutes.routes)
       .provide(Server.defaultWithPort(serverMetadataConfig.port))
   }
+
 }

@@ -11,8 +11,8 @@ case class ServerConfig(
 ) extends DerivedConfig
 case class ServerMetadataConfig(port: Int)
 case class KafkaConsumerConfig(
+    consumerCount: Int,
     bootstrapServers: String,
-    groupId: String,
     topicName: String,
     partitionList: List[Int]
 )
@@ -20,5 +20,6 @@ case class KafkaConsumerConfig(
 // TODO rename to producerConfig
 case class PublisherConfig(topicName: String, bootstrapServers: List[String])
 case class IngestionJobConfig(
-    publisherConfig: PublisherConfig
+    publisherConfig: PublisherConfig,
+    batchSize: Int
 ) extends DerivedConfig
