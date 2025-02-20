@@ -15,7 +15,4 @@ trait BaseServer extends ZIOAppDefault {
       .provide(Server.defaultWithPort(serverMetadataConfig.port))
   }
 
-  def cleanUp() = {
-    kafkaRoutes.cleanUp()
-  }
 }

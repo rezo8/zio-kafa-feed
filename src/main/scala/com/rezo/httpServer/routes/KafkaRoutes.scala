@@ -1,18 +1,25 @@
 package com.rezo.httpServer.routes
 
 import com.rezo.config.KafkaConsumerConfig
-import com.rezo.httpServer.Responses.LoadPeopleResponse
+import com.rezo.httpServer.Responses.LoadMessagesResponse
+import com.rezo.kafka.KafkaConsumerFactory
 import com.rezo.services.MessageReader
 import io.circe.syntax.*
-import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
-import zio.ZIO
+import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
+import zio.{URIO, ZIO, ZLayer}
 
-import java.util.Properties
 import scala.util.Random
 
 class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
   private val defaultCount = 10
+  private val consumerPool
+      : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
+    (0 to consumerConfig.consumerCount).map(_ =>
+      for {
+        layer <- KafkaConsumerFactory.make(consumerConfig)
+      } yield layer
+    )
 
   override def routes: Routes[Any, Response] =
     Routes(
@@ -20,42 +27,50 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
         "offset"
       ) -> handler { (topicName: String, offset: Int, req: Request) =>
         {
-          val count = req.url
-            .queryParams("count")
-            .headOption
-            .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-
-          val requestMessageReader = new MessageReader(consumerConfig)
-
-          val result = for {
-            readPeople <- requestMessageReader.processForAllPartitionsZio(
-              topicName,
-              consumerConfig.partitionList,
-              offset,
-              count
-            )
-            response = LoadPeopleResponse(readPeople)
-          } yield response
-
-          result.fold(
-            error => {
-              Response
-                .error(Status.InternalServerError, message = error.getMessage)
-            },
-            resp =>
-              Response.json(
-                resp
-                  .asJson(LoadPeopleResponse.loadPeopleResponseEncoder)
-                  .toString
-              )
-          )
+          handleLoadMessage(topicName, offset, req)
         }
       }
     )
 
+  private def handleLoadMessage(
+      topicName: String,
+      offset: Int,
+      req: Request
+  ): URIO[Any, Response] = {
+    val count = req.url
+      .queryParams("count")
+      .headOption
+      .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
+    val requestMessageReader = new MessageReader(consumerConfig)
+    val result = for {
+      readMessages <- requestMessageReader
+        .processForAllPartitionsZio(
+          topicName,
+          consumerConfig.partitionList,
+          offset,
+          count
+        )
+        .provideLayer(consumerPool(Random.nextInt(consumerPool.size)))
+      response = LoadMessagesResponse(readMessages)
+    } yield response
+
+    result
+      .fold(
+        error => {
+          Response
+            .error(Status.InternalServerError, message = error.getMessage)
+        },
+        resp =>
+          Response.json(
+            resp
+              .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
+              .toString
+          )
+      )
+  }
+
   def cleanUp(): ZIO[Any, Throwable, Unit] = {
     for {
-      //      _ <- ZIO.attempt(consumerPool.foreach(x => x.close()))
       _ <- ZIO.logInfo("closed all consumers")
     } yield ()
   }
