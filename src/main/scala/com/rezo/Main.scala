@@ -18,7 +18,8 @@ object Main extends ZIOAppDefault with BaseServer { env =>
   override val serverMetadataConfig: ServerMetadataConfig =
     config.serverMetadataConfig
   override val kafkaRoutes: KafkaRoutes = new KafkaRoutes(
-    config.consumerConfig
+    config.consumerConfig,
+    config.readerConfig
   )
 
   private def appLogic: ZIO[Any, Throwable, Nothing] = {

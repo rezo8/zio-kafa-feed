@@ -40,7 +40,7 @@ class MessageReader(config: KafkaConsumerConfig) {
       case (messages, stopReading) =>
         val allMessages = accumulatedMessages ++ messages
         if (stopReading || allMessages.size >= count) {
-          ZIO.succeed(allMessages.take(count))
+          ZIO.succeed(allMessages)
         } else {
           readCountMessagesFromPartition(
             partition,

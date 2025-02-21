@@ -40,36 +40,70 @@ class KafkaRoutes(
       offset: Int,
       req: Request
   ): URIO[Any, Response] = {
+    // TODO load partition count using Kafka admin client.
     val count = req.url
       .queryParams("count")
       .headOption
       .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-    val requestMessageReader = new MessageReader(consumerConfig)
-    val result = for {
-      readMessages <- requestMessageReader
-        .readMessagesForPartitions(
-          topicName,
-          consumerConfig.partitionList,
-          offset,
-          count
-        )
-        .provideLayer(consumerPool(Random.nextInt(consumerPool.size)))
-      response = LoadMessagesResponse(readMessages)
-    } yield response
+    val workingConsumers =
+      Random.shuffle(consumerPool).take(readerConfig.parallelReads)
 
-    result
+    val consumersWithPartitions = assignPartitionsToConsumers(
+      workingConsumers.toList,
+      consumerConfig.partitionList
+    )
+    // is there a better place for this to be instantiated?
+    val requestMessageReader = new MessageReader(consumerConfig)
+    val procs = consumersWithPartitions.map((consumerEnv, partitions) => {
+      for {
+        readMessages <- requestMessageReader
+          .readMessagesForPartitions(
+            topicName,
+            partitions,
+            offset,
+            count
+          )
+          .provideLayer(consumerEnv)
+      } yield readMessages
+    })
+
+    ZIO
+      .collectAllPar(procs)
+      .map(_.flatten.toList)
       .fold(
         error => {
           Response
             .error(Status.InternalServerError, message = error.getMessage)
         },
-        resp =>
+        readMessages => {
           Response.json(
-            resp
+            LoadMessagesResponse(readMessages)
               .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
               .toString
           )
+        }
       )
+  }
+
+  private def assignPartitionsToConsumers[A, B](
+      consumers: List[A],
+      partitions: List[B]
+  ): Map[A, List[B]] = {
+    val numConsumers = consumers.size
+    val numPartitions = partitions.size
+
+    val assignmentMap =
+      consumers.map(consumer => consumer -> List.empty[B]).toMap
+
+    partitions.zipWithIndex.foldLeft(assignmentMap) {
+      case (acc, (partition, index)) =>
+        val consumerIndex =
+          index % numConsumers
+        val consumer = consumers(consumerIndex)
+        val updatedPartitions =
+          acc(consumer) :+ partition
+        acc + (consumer -> updatedPartitions)
+    }
   }
 
   def cleanUp(): ZIO[Any, Throwable, Unit] = {
