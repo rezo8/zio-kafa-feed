@@ -2,11 +2,12 @@ package com.rezo.httpServer.routes
 
 import com.rezo.config.{KafkaConsumerConfig, ReaderConfig}
 import com.rezo.httpServer.Responses.LoadMessagesResponse
-import com.rezo.kafka.KafkaConsumerFactory
+import com.rezo.kafka.KafkaLayerFactory
 import com.rezo.services.MessageReader
 import io.circe.syntax.*
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
+import zio.kafka.admin.AdminClient
 import zio.{URIO, ZIO, ZLayer}
 
 import scala.util.Random
@@ -20,9 +21,10 @@ class KafkaRoutes(
       : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
     (0 to readerConfig.consumerCount).map(_ =>
       for {
-        layer <- KafkaConsumerFactory.make(consumerConfig)
+        layer <- KafkaLayerFactory.makeKafkaConsumer(consumerConfig)
       } yield layer
     )
+  private val adminLayer = KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
 
   override def routes: Routes[Any, Response] =
     Routes(
@@ -40,48 +42,53 @@ class KafkaRoutes(
       offset: Int,
       req: Request
   ): URIO[Any, Response] = {
-    // TODO load partition count using Kafka admin client.
     val count = req.url
       .queryParams("count")
       .headOption
       .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
     val workingConsumers =
       Random.shuffle(consumerPool).take(readerConfig.parallelReads)
-
-    val consumersWithPartitions = assignPartitionsToConsumers(
-      workingConsumers.toList,
-      consumerConfig.partitionList
-    )
     // is there a better place for this to be instantiated?
     val requestMessageReader = new MessageReader(consumerConfig)
-    val procs = consumersWithPartitions.map((consumerEnv, partitions) => {
-      for {
-        readMessages <- requestMessageReader
-          .readMessagesForPartitions(
-            topicName,
-            partitions,
-            offset,
-            count
-          )
-          .provideLayer(consumerEnv)
-      } yield readMessages
-    })
+    (for {
+      adminClient <- ZIO.service[AdminClient]
+      partitionCountOpt <- adminClient
+        .describeTopics(List(topicName))
+        .map(_.get(topicName).map(_.partitions.map(_.partition)))
+      partitions <- ZIO.attempt(partitionCountOpt.get)
+      consumersWithPartitions = assignPartitionsToConsumers(
+        workingConsumers.toList,
+        partitions
+      )
+      procs = consumersWithPartitions.map((consumerEnv, partitions) => {
+        for {
+          readMessages <- requestMessageReader
+            .readMessagesForPartitions(
+              topicName,
+              partitions,
+              offset,
+              count
+            )
+            .provideLayer(consumerEnv)
+        } yield readMessages
+      })
 
-    ZIO
-      .collectAllPar(procs)
-      .map(_.flatten.toList)
-      .fold(
-        error => {
-          Response
-            .error(Status.InternalServerError, message = error.getMessage)
-        },
-        readMessages => {
+      res <- ZIO
+        .collectAllPar(procs)
+        .map(readMessages => {
           Response.json(
-            LoadMessagesResponse(readMessages)
+            LoadMessagesResponse(readMessages.flatten.toList)
               .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
               .toString
           )
-        }
+        })
+    } yield res)
+      .provideLayer(adminLayer)
+      .catchAll(error =>
+        ZIO.succeed(
+          Response
+            .error(Status.InternalServerError, message = error.getMessage)
+        )
       )
   }
 
@@ -105,11 +112,4 @@ class KafkaRoutes(
         acc + (consumer -> updatedPartitions)
     }
   }
-
-  def cleanUp(): ZIO[Any, Throwable, Unit] = {
-    for {
-      _ <- ZIO.logInfo("closed all consumers")
-    } yield ()
-  }
-
 }

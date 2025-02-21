@@ -8,7 +8,6 @@ import pureconfig.ConfigSource
 import zio.{URIO, ZIO, ZIOAppDefault}
 
 object Main extends ZIOAppDefault with BaseServer { env =>
-
   val config: ServerConfig = ConfigSource.default
     .at("server")
     .load[DerivedConfig]
@@ -17,6 +16,7 @@ object Main extends ZIOAppDefault with BaseServer { env =>
 
   override val serverMetadataConfig: ServerMetadataConfig =
     config.serverMetadataConfig
+
   override val kafkaRoutes: KafkaRoutes = new KafkaRoutes(
     config.consumerConfig,
     config.readerConfig
