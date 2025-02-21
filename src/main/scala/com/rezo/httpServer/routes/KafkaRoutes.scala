@@ -24,7 +24,8 @@ class KafkaRoutes(
         layer <- KafkaLayerFactory.makeKafkaConsumer(consumerConfig)
       } yield layer
     )
-  private val adminLayer = KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
+  private val adminLayer =
+    KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
 
   override def routes: Routes[Any, Response] =
     Routes(
@@ -49,7 +50,7 @@ class KafkaRoutes(
     val workingConsumers =
       Random.shuffle(consumerPool).take(readerConfig.parallelReads)
     // is there a better place for this to be instantiated?
-    val requestMessageReader = new MessageReader(consumerConfig)
+    val requestMessageReader = new MessageReader
     (for {
       adminClient <- ZIO.service[AdminClient]
       partitionCountOpt <- adminClient

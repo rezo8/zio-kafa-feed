@@ -1,6 +1,5 @@
 package com.rezo.services
 
-import com.rezo.config.KafkaConsumerConfig
 import com.rezo.httpServer.Responses.Message
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.TopicPartition
@@ -10,7 +9,7 @@ import zio.stream.ZStream
 import java.time.Duration
 import scala.jdk.CollectionConverters.*
 
-class MessageReader(config: KafkaConsumerConfig) {
+class MessageReader {
   def readMessagesForPartitions(
       topic: String,
       partitions: List[Int],
