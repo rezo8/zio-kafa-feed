@@ -9,7 +9,6 @@ import java.util.Properties
 
 object KafkaConsumerFactory {
 
-  // ZLayer to create a KafkaConsumer[String, String]
   def make(
       config: KafkaConsumerConfig
   ): ZLayer[Any, Throwable, KafkaConsumer[String, String]] =
@@ -23,6 +22,10 @@ object KafkaConsumerFactory {
           )
           props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none")
           props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
+          props.put(
+            ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+            config.maxPollRecords
+          )
           props.put(
             ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
             classOf[StringDeserializer]

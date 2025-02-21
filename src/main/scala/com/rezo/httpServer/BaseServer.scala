@@ -2,10 +2,10 @@ package com.rezo.httpServer
 
 import com.rezo.config.ServerMetadataConfig
 import com.rezo.httpServer.routes.KafkaRoutes
+import zio.ZIO
 import zio.http.Server
-import zio.{ZIO, ZIOAppDefault}
 
-trait BaseServer extends ZIOAppDefault {
+trait BaseServer {
   val serverMetadataConfig: ServerMetadataConfig
   val kafkaRoutes: KafkaRoutes
 

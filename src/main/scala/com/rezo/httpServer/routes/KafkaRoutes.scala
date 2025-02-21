@@ -1,6 +1,6 @@
 package com.rezo.httpServer.routes
 
-import com.rezo.config.KafkaConsumerConfig
+import com.rezo.config.{KafkaConsumerConfig, ReaderConfig}
 import com.rezo.httpServer.Responses.LoadMessagesResponse
 import com.rezo.kafka.KafkaConsumerFactory
 import com.rezo.services.MessageReader
@@ -11,11 +11,14 @@ import zio.{URIO, ZIO, ZLayer}
 
 import scala.util.Random
 
-class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
+class KafkaRoutes(
+    consumerConfig: KafkaConsumerConfig,
+    readerConfig: ReaderConfig
+) extends RouteContainer {
   private val defaultCount = 10
   private val consumerPool
       : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
-    (0 to consumerConfig.consumerCount).map(_ =>
+    (0 to readerConfig.consumerCount).map(_ =>
       for {
         layer <- KafkaConsumerFactory.make(consumerConfig)
       } yield layer
@@ -44,7 +47,7 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
     val requestMessageReader = new MessageReader(consumerConfig)
     val result = for {
       readMessages <- requestMessageReader
-        .processForAllPartitionsZio(
+        .readMessagesForPartitions(
           topicName,
           consumerConfig.partitionList,
           offset,

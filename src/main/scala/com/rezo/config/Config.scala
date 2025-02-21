@@ -7,16 +7,21 @@ sealed trait DerivedConfig derives ConfigReader
 
 case class ServerConfig(
     serverMetadataConfig: ServerMetadataConfig,
+    readerConfig: ReaderConfig,
     consumerConfig: KafkaConsumerConfig
 ) extends DerivedConfig
 case class ServerMetadataConfig(port: Int)
 case class KafkaConsumerConfig(
-    consumerCount: Int,
     bootstrapServers: String,
     topicName: String,
-    partitionList: List[Int]
+    partitionList: List[Int],
+    maxPollRecords: Int
 )
 
+case class ReaderConfig(
+    consumerCount: Int,
+    parallelReads: Int
+)
 // TODO rename to producerConfig
 case class PublisherConfig(topicName: String, bootstrapServers: List[String])
 case class IngestionJobConfig(
