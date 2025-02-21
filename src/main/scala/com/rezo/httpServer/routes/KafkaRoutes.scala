@@ -3,7 +3,9 @@ package com.rezo.httpServer.routes
 import com.rezo.config.{KafkaConsumerConfig, ReaderConfig}
 import com.rezo.httpServer.Responses.LoadMessagesResponse
 import com.rezo.kafka.KafkaLayerFactory
+import com.rezo.objects.Person
 import com.rezo.services.MessageReader
+import io.circe.Encoder
 import io.circe.syntax.*
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
@@ -17,14 +19,14 @@ class KafkaRoutes(
     readerConfig: ReaderConfig
 ) extends RouteContainer {
   private val defaultCount = 10
-  private val consumerPool
-      : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
+  private val consumerPool =
     (0 to readerConfig.consumerCount).map(_ =>
       for {
         layer <- KafkaLayerFactory.makeKafkaConsumer(consumerConfig)
       } yield layer
     )
-  private val adminLayer = KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
+  private val adminLayer =
+    KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
 
   override def routes: Routes[Any, Response] =
     Routes(
@@ -49,7 +51,8 @@ class KafkaRoutes(
     val workingConsumers =
       Random.shuffle(consumerPool).take(readerConfig.parallelReads)
     // is there a better place for this to be instantiated?
-    val requestMessageReader = new MessageReader(consumerConfig)
+    val decoder = calculateBodyDecoder(topicName)
+    val requestMessageReader = new MessageReader(consumerConfig, decoder)
     (for {
       adminClient <- ZIO.service[AdminClient]
       partitionCountOpt <- adminClient
@@ -73,12 +76,14 @@ class KafkaRoutes(
         } yield readMessages
       })
 
+      messageEncoder = calculateMessageEncoder(topicName)
+
       res <- ZIO
         .collectAllPar(procs)
         .map(readMessages => {
           Response.json(
             LoadMessagesResponse(readMessages.flatten.toList)
-              .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
+              .asJson(messageEncoder)
               .toString
           )
         })
@@ -110,6 +115,32 @@ class KafkaRoutes(
         val updatedPartitions =
           acc(consumer) :+ partition
         acc + (consumer -> updatedPartitions)
+    }
+  }
+
+  private def encodeJson(
+      topicName: String,
+      readMessages: 
+  )= {
+    topicName match {
+      case "people" =>
+        Response.json(
+          LoadMessagesResponse(readMessages.flatten.toList)
+            .asJson(LoadMessagesResponse.loadMessagesResponseEncoder(Person.personEncoder))
+            .toString
+        )
+        
+      case _ =>
+        LoadMessagesResponse.loadMessagesResponseEncoder(
+          io.circe.Encoder.encodeString
+        )
+    }
+  }
+
+  private def calculateBodyDecoder(topicName: String) = {
+    topicName match {
+      case "people" => Person.personDecoder
+      case _        => io.circe.Decoder.decodeString
     }
   }
 }

@@ -12,6 +12,7 @@ lazy val root = project
     libraryDependencies ++= Seq(
       "com.typesafe" % "config" % "1.4.3",
       "com.github.pureconfig" %% "pureconfig-core" % "0.17.8",
+      "com.nequissimus" %% "circe-kafka" % "2.7.0",
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-http" % "3.0.1",
       "dev.zio" %% "zio-nio" % "2.0.2",

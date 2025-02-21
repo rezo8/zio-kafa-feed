@@ -2,7 +2,12 @@ package com.rezo.kafka
 
 import com.rezo.config.KafkaConsumerConfig
 import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
-import org.apache.kafka.common.serialization.StringDeserializer
+import org.apache.kafka.common.serialization.{
+  BytesDeserializer,
+  Deserializer,
+  StringDeserializer
+}
+import org.apache.kafka.common.utils.Bytes
 import zio.kafka.admin.{AdminClient, AdminClientSettings}
 import zio.{ZIO, ZLayer}
 
@@ -34,16 +39,12 @@ object KafkaLayerFactory {
             ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
             config.maxPollRecords
           )
-          props.put(
-            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-            classOf[StringDeserializer]
-          )
-          props.put(
-            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-            classOf[StringDeserializer]
-          )
 
-          new KafkaConsumer[String, String](props)
+          new KafkaConsumer[String, String](
+            props,
+            new StringDeserializer(),
+            new StringDeserializer()
+          )
         }
       )(consumer => ZIO.attempt(consumer.close()).orDie)
     }

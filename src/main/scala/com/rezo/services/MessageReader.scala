@@ -2,21 +2,27 @@ package com.rezo.services
 
 import com.rezo.config.KafkaConsumerConfig
 import com.rezo.httpServer.Responses.Message
+import io.circe.Decoder
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.utils.Bytes
 import zio.ZIO
+import io.circe._, io.circe.parser._
 import zio.stream.ZStream
 
 import java.time.Duration
 import scala.jdk.CollectionConverters.*
 
-class MessageReader(config: KafkaConsumerConfig) {
+class MessageReader[A](
+    config: KafkaConsumerConfig,
+    implicit val decoder: Decoder[A]
+) {
   def readMessagesForPartitions(
       topic: String,
       partitions: List[Int],
       offset: Int,
       count: Int
-  ): ZIO[KafkaConsumer[String, String], Throwable, List[Message]] = {
+  ): ZIO[KafkaConsumer[String, String], Throwable, List[Message[A]]] = {
     val topicPartitions =
       partitions.map(partition => TopicPartition(topic, partition))
     for {
@@ -34,8 +40,8 @@ class MessageReader(config: KafkaConsumerConfig) {
       partition: TopicPartition,
       offset: Int,
       count: Int,
-      accumulatedMessages: List[Message] = List.empty
-  ): ZIO[KafkaConsumer[String, String], Throwable, List[Message]] = {
+      accumulatedMessages: List[Message[A]] = List.empty
+  ): ZIO[KafkaConsumer[String, String], Throwable, List[Message[A]]] = {
     consumeOffPartition(partition, offset, count).flatMap {
       case (messages, stopReading) =>
         val allMessages = accumulatedMessages ++ messages
@@ -56,7 +62,11 @@ class MessageReader(config: KafkaConsumerConfig) {
       partition: TopicPartition,
       offset: Int,
       count: Int
-  ) = {
+  ): ZIO[
+    KafkaConsumer[String, String],
+    Throwable,
+    (List[Message[A]], Boolean)
+  ] = {
     for {
       consumer <- ZIO.service[KafkaConsumer[String, String]]
       _ <- ZIO.attempt(consumer.assign(List(partition).asJava))
@@ -69,16 +79,25 @@ class MessageReader(config: KafkaConsumerConfig) {
       messages <- ZStream
         .fromIterable(recordsToProc.asScala)
         .take(count) // figure out to remove chunk or take here.
-        .map(record => {
-          Message(
-            key = record.key(),
-            topic = record.topic(),
-            rawMessage = record.value(),
-            partition = record.partition(),
-            offset = record.offset()
-          )
-        })
-        .runFold(List.empty[Message]) { (acc, result) => acc :+ result }
+        .mapZIO { record =>
+          ZIO
+            .attempt {
+              for {
+                parsed <- parse(record.value()).toOption
+                decoded <- parsed.as[A].toOption
+              } yield Message[A](
+                key = record.key(),
+                topic = record.topic(),
+                rawMessage = decoded,
+                partition = record.partition(),
+                offset = record.offset()
+              )
+            }
+            .map(_.toList)
+        }
+        .runFold(List.empty[Message[A]]) { (acc, result) =>
+          acc ++ result
+        } // Combine results
     } yield (messages, (recordsToProc.count() == 0) || messages.size >= count)
   }
 }
