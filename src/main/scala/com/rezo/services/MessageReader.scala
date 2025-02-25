@@ -9,26 +9,32 @@ import zio.stream.ZStream
 import java.time.Duration
 import scala.jdk.CollectionConverters.*
 
-class MessageReader {
-  def readMessagesForPartitions(
+object MessageReader {
+  case class ReadMessageConfig(
       topic: String,
       partitions: List[Int],
       offset: Int,
       count: Int
-  ): ZIO[KafkaConsumer[String, String], Throwable, List[Message]] = {
-    val topicPartitions =
-      partitions.map(partition => TopicPartition(topic, partition))
+  )
+
+  def readMessagesForPartitions
+      : ZIO[ReadMessageConfig & KafkaConsumer[String, String], Throwable, List[
+        Message
+      ]] = {
     for {
       consumer <- ZIO.service[KafkaConsumer[String, String]]
+      config <- ZIO.service[ReadMessageConfig]
+      topicPartitions = config.partitions.map(partition =>
+        TopicPartition(config.topic, partition)
+      )
       readRes <- ZIO
         .foreach(topicPartitions) { partition =>
-          readCountMessagesFromPartition(partition, offset, count)
+          readCountMessagesFromPartition(partition, config.offset, config.count)
         }
         .map(_.flatten)
     } yield readRes
   }
 
-  // TODO need to make sure the read recurses until the records is empty or the list size is count.
   private def readCountMessagesFromPartition(
       partition: TopicPartition,
       offset: Int,
@@ -64,10 +70,9 @@ class MessageReader {
       _ <- ZIO.logInfo(
         s"Reading ${recordsToProc.count()} messages off of partition ${partition} and offset ${offset}"
       )
-      stopReading = recordsToProc.count() == 0
       messages <- ZStream
         .fromIterable(recordsToProc.asScala)
-        .take(count) // figure out to remove chunk or take here.
+        .take(count)
         .map(record => {
           Message(
             key = record.key(),

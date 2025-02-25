@@ -8,7 +8,7 @@ import io.circe.generic.semiauto.deriveEncoder
 object Responses {
   trait ServerResponse
 
-  case class LoadMessagesResponse(data: List[Message])
+  case class LoadMessagesResponse(data: Seq[Message])
 
   object LoadMessagesResponse {
     implicit val loadMessagesResponseEncoder: Encoder[LoadMessagesResponse] =

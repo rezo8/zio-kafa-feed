@@ -22,8 +22,8 @@ case class ReaderConfig(
     parallelReads: Int
 )
 // TODO rename to producerConfig
-case class PublisherConfig(topicName: String, bootstrapServers: List[String])
+case class ProducerConfig(topicName: String, bootstrapServers: List[String])
 case class IngestionJobConfig(
-    publisherConfig: PublisherConfig,
+    publisherConfig: ProducerConfig,
     batchSize: Int
 ) extends DerivedConfig
