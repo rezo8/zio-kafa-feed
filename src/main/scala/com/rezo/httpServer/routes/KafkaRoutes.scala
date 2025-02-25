@@ -1,94 +1,82 @@
 package com.rezo.httpServer.routes
 
-import com.rezo.config.{KafkaConsumerConfig, ReaderConfig}
+import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.LoadMessagesResponse
-import com.rezo.kafka.KafkaLayerFactory
 import com.rezo.services.MessageReader
 import io.circe.syntax.*
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
 import zio.kafka.admin.AdminClient
-import zio.{URIO, ZIO, ZLayer}
+import zio.{Scope, ZIO, ZLayer, ZPool}
 
-import scala.util.Random
+object KafkaRoutes {
 
-class KafkaRoutes(
-    consumerConfig: KafkaConsumerConfig,
-    readerConfig: ReaderConfig
-) extends RouteContainer {
+  // Define the default count for messages to fetch
   private val defaultCount = 10
-  private val consumerPool
-      : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
-    (0 to readerConfig.consumerCount).map(_ =>
-      for {
-        layer <- KafkaLayerFactory.makeKafkaConsumer(consumerConfig)
-      } yield layer
-    )
-  private val adminLayer =
-    KafkaLayerFactory.makeKafkaAdminClient(consumerConfig)
 
-  override def routes: Routes[Any, Response] =
+  // Routes definition
+  def routes(readerConfig: ReaderConfig): Routes[
+    Scope & ZPool[Throwable, KafkaConsumer[String, String]] & AdminClient,
+    Response
+  ] =
     Routes(
-      Method.GET / "topic" / zio.http.string("topicName") / zio.http.int(
-        "offset"
-      ) -> handler { (topicName: String, offset: Int, req: Request) =>
-        {
-          handleLoadMessage(topicName, offset, req)
-        }
+      Method.GET / "topic" / string("topicName") / int("offset") -> handler {
+        (topicName: String, offset: Int, req: Request) =>
+          handleLoadMessage(topicName, offset, req, readerConfig)
       }
     )
 
+  // Handler for loading messages
   private def handleLoadMessage(
       topicName: String,
       offset: Int,
-      req: Request
-  ): URIO[Any, Response] = {
+      req: Request,
+      readerConfig: ReaderConfig
+  ): ZIO[
+    Scope & ZPool[Throwable, KafkaConsumer[String, String]] & AdminClient,
+    Nothing,
+    Response
+  ] = {
     val count = req.url
       .queryParams("count")
       .headOption
-      .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-    val workingConsumers =
-      Random.shuffle(consumerPool).take(readerConfig.parallelReads)
-    // is there a better place for this to be instantiated?
+      .flatMap(_.toIntOption)
+      .getOrElse(defaultCount)
+
     val requestMessageReader = new MessageReader
+
     (for {
       adminClient <- ZIO.service[AdminClient]
-      partitionCountOpt <- adminClient
+      pool <- ZIO.service[ZPool[Throwable, KafkaConsumer[String, String]]]
+      partitions <- adminClient
         .describeTopics(List(topicName))
         .map(_.get(topicName).map(_.partitions.map(_.partition)))
-      partitions <- ZIO.attempt(partitionCountOpt.get)
-      consumersWithPartitions = assignPartitionsToConsumers(
-        workingConsumers.toList,
-        partitions
-      )
-      procs = consumersWithPartitions.map((consumerEnv, partitions) => {
-        for {
-          readMessages <- requestMessageReader
-            .readMessagesForPartitions(
-              topicName,
-              partitions,
-              offset,
-              count
-            )
-            .provideLayer(consumerEnv)
-        } yield readMessages
-      })
+        .someOrFail(new RuntimeException(s"Topic $topicName not found"))
 
-      res <- ZIO
-        .collectAllPar(procs)
-        .map(readMessages => {
-          Response.json(
-            LoadMessagesResponse(readMessages.flatten.toList)
-              .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
-              .toString
-          )
-        })
-    } yield res)
-      .provideLayer(adminLayer)
+      consumers <- ZIO.foreach(partitions) { partition =>
+        pool.get.map(consumer => (consumer, partition))
+      }
+      readMessages <- ZIO
+        .collectAllPar(
+          consumers.map { case (consumer, partition) =>
+            requestMessageReader
+              .readMessagesForPartitions(
+                topicName,
+                List(partition),
+                offset,
+                count
+              )
+              .provide(ZLayer.succeed(consumer))
+          }
+        )
+        .map(_.flatten.toList)
+      response = Response.json(
+        LoadMessagesResponse(readMessages).asJson.toString
+      )
+    } yield response)
       .catchAll(error =>
         ZIO.succeed(
-          Response
-            .error(Status.InternalServerError, message = error.getMessage)
+          Response.error(Status.InternalServerError, error.getMessage)
         )
       )
   }
