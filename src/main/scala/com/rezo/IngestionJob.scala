@@ -34,12 +34,14 @@ object IngestionJob extends ZIOAppDefault {
       .via(ZPipeline.utf8Decode)
       .runCollect
       .map(_.mkString)
+      .tapError(e => ZIO.logError(s"Failed to load JSON file: ${e.getMessage}"))
 
     people <- ZIO
       .fromEither(parse(jsonString).flatMap(_.as[CtRoot]))
-      .mapError(e =>
+      .mapError(e => {
+        ZIO.logError(s"Failed to parse JSON array: ${e.getMessage}")
         new RuntimeException(s"Failed to parse JSON array: ${e.getMessage}")
-      )
+      })
       .map(_.ctRoot.map(_.as[Person]))
   } yield people
 
@@ -47,6 +49,9 @@ object IngestionJob extends ZIOAppDefault {
     (for {
       persons <- loadJson
       validPersons = persons.collect { case Right(person) => person }
+      _ <- ZIO.logInfo(
+        s"Successfully loaded ${validPersons.size} valid records from the file."
+      )
       producer <- ZIO.service[Producer]
       startTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
       successfulPublishes <- ZStream
@@ -59,6 +64,9 @@ object IngestionJob extends ZIOAppDefault {
           )
         })
         .via(producer.produceAll(Serde.string, Person.serde))
+        .tapError(e =>
+          ZIO.logError(s"Failed to publish record: ${e.getMessage}")
+        )
         .runFold(0) { (acc, _) =>
           acc + 1
         }
@@ -66,6 +74,8 @@ object IngestionJob extends ZIOAppDefault {
       _ <- ZIO.logInfo(
         s"Successfully published $successfulPublishes records in ${endTime - startTime} ms."
       )
-    } yield ()).provideLayer(producer)
+    } yield ())
+      .provideLayer(producer)
+      .catchAll(e => ZIO.logError(s"Job failed with error: ${e.getMessage}"))
   }
 }
