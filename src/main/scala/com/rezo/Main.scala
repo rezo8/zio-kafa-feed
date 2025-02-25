@@ -8,7 +8,7 @@ import com.rezo.config.{
 }
 import com.rezo.exceptions.Exceptions.ConfigLoadException
 import com.rezo.httpServer.routes.KafkaRoutes
-import com.rezo.kafka.KafkaLayerFactory
+import com.rezo.kafka.KafkaClientFactory
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import pureconfig.ConfigSource
 import zio.http.Server
@@ -27,14 +27,14 @@ object Main extends ZIOAppDefault {
     config.serverMetadataConfig
 
   private val adminLayer: ZLayer[Any, Throwable, AdminClient] =
-    KafkaLayerFactory.makeKafkaAdminClient(config.consumerConfig)
+    KafkaClientFactory.makeKafkaAdminClient(config.consumerConfig)
 
   type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
 
   private val consumerPoolLayer: ZLayer[Scope, Throwable, ConsumerPool] =
     ZLayer.fromZIO {
       ZPool.make(
-        KafkaLayerFactory.makeKafkaConsumerZio.provideLayer(
+        KafkaClientFactory.makeKafkaConsumerZio.provideLayer(
           ZLayer.succeed(config.consumerConfig)
         ),
         config.readerConfig.consumerCount

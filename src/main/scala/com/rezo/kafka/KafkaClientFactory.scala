@@ -8,7 +8,7 @@ import zio.{ZIO, ZLayer}
 
 import java.util.Properties
 
-object KafkaLayerFactory {
+object KafkaClientFactory {
   def makeKafkaAdminClient(
       config: KafkaConsumerConfig
   ): ZLayer[Any, Throwable, AdminClient] = {
@@ -47,34 +47,5 @@ object KafkaLayerFactory {
       }
     } yield consumer
   }
-  def makeKafkaConsumer(
-      config: KafkaConsumerConfig
-  ): ZLayer[Any, Throwable, KafkaConsumer[String, String]] =
-    ZLayer.scoped {
-      ZIO.acquireRelease(
-        ZIO.attempt {
-          val props = new Properties()
-          props.put(
-            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-            config.bootstrapServers.mkString(",")
-          )
-          props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none")
-          props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
-          props.put(
-            ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
-            config.maxPollRecords
-          )
-          props.put(
-            ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-            classOf[StringDeserializer]
-          )
-          props.put(
-            ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-            classOf[StringDeserializer]
-          )
 
-          new KafkaConsumer[String, String](props)
-        }
-      )(consumer => ZIO.attempt(consumer.close()).orDie)
-    }
 }

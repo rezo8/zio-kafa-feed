@@ -1,7 +1,7 @@
 package com.rezo.httpServer.routes
 
 import com.rezo.Main.ConsumerPool
-import com.rezo.config.{KafkaConsumerConfig, ReaderConfig}
+import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.LoadMessagesResponse
 import com.rezo.services.MessageReader
 import com.rezo.services.MessageReader.ReadMessageConfig
@@ -12,9 +12,7 @@ import zio.kafka.admin.AdminClient
 import zio.{Scope, ZIO, ZLayer, ZPool}
 
 object KafkaRoutes {
-
   private val defaultCount = 10
-
   def routes
       : Routes[AdminClient & ConsumerPool & Scope & ReaderConfig, Response] =
     Routes(
