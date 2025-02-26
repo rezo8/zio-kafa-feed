@@ -1,13 +1,21 @@
 package com.rezo
 
-import com.rezo.config.{DerivedConfig, ServerConfig, ServerMetadataConfig}
+import com.rezo.config.{
+  DerivedConfig,
+  ReaderConfig,
+  ServerConfig,
+  ServerMetadataConfig
+}
 import com.rezo.exceptions.Exceptions.ConfigLoadException
-import com.rezo.httpServer.BaseServer
 import com.rezo.httpServer.routes.KafkaRoutes
+import com.rezo.kafka.KafkaClientFactory
+import org.apache.kafka.clients.consumer.KafkaConsumer
 import pureconfig.ConfigSource
-import zio.{URIO, ZIO, ZIOAppDefault}
+import zio.http.Server
+import zio.kafka.admin.AdminClient
+import zio.{Scope, ZIO, ZIOAppDefault, ZLayer, ZPool}
 
-object Main extends ZIOAppDefault with BaseServer { env =>
+object Main extends ZIOAppDefault {
 
   val config: ServerConfig = ConfigSource.default
     .at("server")
@@ -15,26 +23,47 @@ object Main extends ZIOAppDefault with BaseServer { env =>
     .getOrElse(throw new ConfigLoadException())
     .asInstanceOf[ServerConfig]
 
-  override val serverMetadataConfig: ServerMetadataConfig =
+  private val serverMetadataConfig: ServerMetadataConfig =
     config.serverMetadataConfig
-  override val kafkaRoutes: KafkaRoutes = new KafkaRoutes(
-    config.consumerConfig
-  )
 
-  private def appLogic: ZIO[Any, Throwable, Nothing] = {
-    for {
-      serverProc <- startServer
-    } yield serverProc
-  }
+  private val adminLayer: ZLayer[Any, Throwable, AdminClient] =
+    KafkaClientFactory.makeKafkaAdminClient(config.consumerConfig)
 
-  private def cleanup: URIO[Any, Int] = {
-    // Fortunately ZIO Http Server comes with graceful shutdown built in: https://github.com/zio/zio-http/pull/2099/files
-    for {
-      _ <- ZIO.logInfo("cleaning up resources")
-    } yield 1
+  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
+
+  private val consumerPoolLayer: ZLayer[Scope, Throwable, ConsumerPool] =
+    ZLayer.fromZIO {
+      ZPool.make(
+        KafkaClientFactory.makeKafkaConsumerZio.provideLayer(
+          ZLayer.succeed(config.consumerConfig)
+        ),
+        config.readerConfig.consumerCount
+      )
+    }
+
+  private val appLayer: ZLayer[
+    Scope & Any,
+    Throwable,
+    AdminClient & ConsumerPool & Server & ReaderConfig
+  ] =
+    ZLayer.succeed(
+      config.readerConfig
+    ) ++ adminLayer ++ consumerPoolLayer ++ Server.defaultWithPort(
+      serverMetadataConfig.port
+    )
+
+  private def startServer: ZIO[Scope, Throwable, Nothing] = {
+    Server
+      .serve(KafkaRoutes.routes)
+      .provideSomeLayer(appLayer)
   }
 
   override def run: ZIO[Any, Throwable, Int] = {
-    appLogic.ensuring(cleanup)
+    ZIO.scoped {
+      for {
+        _ <- ZIO.logInfo("Starting the server...")
+        _ <- startServer
+      } yield 1
+    }
   }
 }

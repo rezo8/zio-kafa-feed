@@ -1,33 +1,31 @@
 package com.rezo.httpServer.routes
 
-import com.rezo.config.KafkaConsumerConfig
+import com.rezo.Main.ConsumerPool
+import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.LoadMessagesResponse
-import com.rezo.kafka.KafkaConsumerFactory
 import com.rezo.services.MessageReader
+import com.rezo.services.MessageReader.ReadMessageConfig
 import io.circe.syntax.*
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
-import zio.{URIO, ZIO, ZLayer}
+import zio.kafka.admin.AdminClient
+import zio.{Scope, ZIO, ZLayer, ZPool}
 
-import scala.util.Random
-
-class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
+object KafkaRoutes {
   private val defaultCount = 10
-  private val consumerPool
-      : Seq[ZLayer[Any, Throwable, KafkaConsumer[String, String]]] =
-    (0 to consumerConfig.consumerCount).map(_ =>
-      for {
-        layer <- KafkaConsumerFactory.make(consumerConfig)
-      } yield layer
-    )
-
-  override def routes: Routes[Any, Response] =
+  def routes
+      : Routes[AdminClient & ConsumerPool & Scope & ReaderConfig, Response] =
     Routes(
       Method.GET / "topic" / zio.http.string("topicName") / zio.http.int(
         "offset"
       ) -> handler { (topicName: String, offset: Int, req: Request) =>
         {
-          handleLoadMessage(topicName, offset, req)
+          handleLoadMessage(topicName, offset, req).catchAll(error =>
+            ZIO.succeed(
+              Response
+                .error(Status.InternalServerError, message = error.getMessage)
+            )
+          )
         }
       }
     )
@@ -36,43 +34,53 @@ class KafkaRoutes(consumerConfig: KafkaConsumerConfig) extends RouteContainer {
       topicName: String,
       offset: Int,
       req: Request
-  ): URIO[Any, Response] = {
+  ): ZIO[
+    ConsumerPool & AdminClient & Scope & ReaderConfig,
+    Throwable,
+    Response
+  ] = {
     val count = req.url
       .queryParams("count")
       .headOption
       .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-    val requestMessageReader = new MessageReader(consumerConfig)
-    val result = for {
-      readMessages <- requestMessageReader
-        .processForAllPartitionsZio(
-          topicName,
-          consumerConfig.partitionList,
-          offset,
-          count
-        )
-        .provideLayer(consumerPool(Random.nextInt(consumerPool.size)))
-      response = LoadMessagesResponse(readMessages)
-    } yield response
 
-    result
-      .fold(
-        error => {
-          Response
-            .error(Status.InternalServerError, message = error.getMessage)
-        },
-        resp =>
-          Response.json(
-            resp
-              .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
-              .toString
-          )
-      )
-  }
-
-  def cleanUp(): ZIO[Any, Throwable, Unit] = {
     for {
-      _ <- ZIO.logInfo("closed all consumers")
-    } yield ()
+      adminClient <- ZIO.service[AdminClient]
+      consumerZPool <- ZIO.service[ConsumerPool]
+      readerConfig <- ZIO.service[ReaderConfig]
+      partitionCountOpt <- adminClient
+        .describeTopics(List(topicName))
+        .map(_.get(topicName).map(_.partitions.map(_.partition)))
+      partitions <- ZIO.attempt(partitionCountOpt.get)
+      partitionGroups = partitions
+        .grouped(
+          (partitions.size + readerConfig.parallelReads - 1) / readerConfig.parallelReads
+        )
+        .toSeq
+      allMessages <- ZIO
+        .foreachPar(partitionGroups)(partitionGroup =>
+          ZIO.scoped {
+            for {
+              consumer <- consumerZPool.get
+              readMessageConfig = ReadMessageConfig(
+                topicName,
+                partitionGroup,
+                offset,
+                count
+              )
+              readMessages <- MessageReader.readMessagesForPartitions
+                .provideLayer(
+                  ZLayer.succeed(consumer) ++ ZLayer.succeed(readMessageConfig)
+                )
+            } yield readMessages
+          }
+        )
+        .map(_.flatten)
+      res = Response.json(
+        LoadMessagesResponse(allMessages)
+          .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
+          .toString
+      )
+    } yield res
   }
-
 }

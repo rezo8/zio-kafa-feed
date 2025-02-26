@@ -1,14 +1,14 @@
 package com.rezo.httpServer
 
 import com.rezo.objects.Person
-import io.circe.{Encoder, Json}
-import io.circe._, io.circe.parser._
+import io.circe.*
 import io.circe.generic.semiauto.deriveEncoder
+import io.circe.parser.*
 
 object Responses {
   trait ServerResponse
 
-  case class LoadMessagesResponse(data: List[Message])
+  case class LoadMessagesResponse(data: Seq[Message])
 
   object LoadMessagesResponse {
     implicit val loadMessagesResponseEncoder: Encoder[LoadMessagesResponse] =
