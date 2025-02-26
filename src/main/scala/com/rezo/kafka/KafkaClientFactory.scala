@@ -20,8 +20,7 @@ object KafkaClientFactory {
   val makeKafkaConsumerZio
       : ZIO[KafkaConsumerConfig, Throwable, KafkaConsumer[String, String]] = {
     for {
-      config <- ZIO
-        .service[KafkaConsumerConfig] // TODO can this be environment?
+      config <- ZIO.service[KafkaConsumerConfig]
       consumer <- ZIO.attempt {
         val props = new Properties()
         props.put(

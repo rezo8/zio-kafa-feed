@@ -21,7 +21,7 @@ case class ReaderConfig(
     consumerCount: Int,
     parallelReads: Int
 )
-// TODO rename to producerConfig
+
 case class ProducerConfig(topicName: String, bootstrapServers: List[String])
 case class IngestionJobConfig(
     publisherConfig: ProducerConfig,
