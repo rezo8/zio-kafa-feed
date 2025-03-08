@@ -18,6 +18,17 @@ This was a foray into the ZIO world of things for Kafka.
 Unfortunately ZIO Kafka consumer does not have the poll, seek that I desired for this project, but wrapping the code
 around proved to be a fun challenge! Layers are not so scary it seems.
 
+
+## Design
+
+### IngestionJob
+
+- IngestionJob
+- DataFetcher
+- Publisher
+
+
+
 ## TODO
 
 Make the MessageReader an abstract class that can stylishly map into a response when given the expected type (and a decoder)

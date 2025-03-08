@@ -41,16 +41,15 @@ object Main extends ZIOAppDefault {
       )
     }
 
-  private val appLayer: ZLayer[
+  val appLayer: ZLayer[
     Scope & Any,
     Throwable,
-    AdminClient & ConsumerPool & Server & ReaderConfig
+    AdminClient & ConsumerPool & ReaderConfig & Server
   ] =
-    ZLayer.succeed(
-      config.readerConfig
-    ) ++ adminLayer ++ consumerPoolLayer ++ Server.defaultWithPort(
-      serverMetadataConfig.port
-    )
+    adminLayer ++
+      consumerPoolLayer ++
+      ZLayer.succeed(config.readerConfig) ++
+      Server.defaultWithPort(serverMetadataConfig.port)
 
   private def startServer: ZIO[Scope, Throwable, Nothing] = {
     Server

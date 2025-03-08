@@ -9,59 +9,60 @@ import io.circe.syntax.*
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
 import zio.kafka.admin.AdminClient
-import zio.{Scope, ZIO, ZLayer, ZPool}
+import zio.{Scope, ZIO, ZLayer}
 
 object KafkaRoutes {
   private val defaultCount = 10
+
   def routes
-      : Routes[AdminClient & ConsumerPool & Scope & ReaderConfig, Response] =
+      : Routes[AdminClient & ConsumerPool & ReaderConfig & Scope, Response] =
     Routes(
-      Method.GET / "topic" / zio.http.string("topicName") / zio.http.int(
-        "offset"
-      ) -> handler { (topicName: String, offset: Int, req: Request) =>
-        {
-          handleLoadMessage(topicName, offset, req).catchAll(error =>
+      Method.GET / "topic" / string("topicName") / int("offset") -> handler {
+        (topicName: String, offset: Int, req: Request) =>
+          val count = req.url
+            .queryParams("count")
+            .headOption
+            .flatMap(_.toIntOption)
+            .getOrElse(defaultCount)
+          handleLoadMessage(topicName, offset, count).catchAll(error =>
             ZIO.succeed(
-              Response
-                .error(Status.InternalServerError, message = error.getMessage)
+              Response.error(
+                Status.InternalServerError,
+                message = error.getMessage
+              )
             )
           )
-        }
       }
     )
 
   private def handleLoadMessage(
       topicName: String,
       offset: Int,
-      req: Request
+      count: Int
   ): ZIO[
-    ConsumerPool & AdminClient & Scope & ReaderConfig,
+    AdminClient & ConsumerPool & ReaderConfig & Scope,
     Throwable,
     Response
   ] = {
-    val count = req.url
-      .queryParams("count")
-      .headOption
-      .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-
     for {
       adminClient <- ZIO.service[AdminClient]
-      consumerZPool <- ZIO.service[ConsumerPool]
+      consumerPool <- ZIO.service[ConsumerPool]
       readerConfig <- ZIO.service[ReaderConfig]
-      partitionCountOpt <- adminClient
+      partitions <- adminClient
         .describeTopics(List(topicName))
         .map(_.get(topicName).map(_.partitions.map(_.partition)))
-      partitions <- ZIO.attempt(partitionCountOpt.get)
+        .someOrFail(new RuntimeException(s"Topic $topicName not found"))
       partitionGroups = partitions
         .grouped(
           (partitions.size + readerConfig.parallelReads - 1) / readerConfig.parallelReads
         )
         .toSeq
       allMessages <- ZIO
-        .foreachPar(partitionGroups)(partitionGroup =>
+        .foreachPar(partitionGroups) { partitionGroup =>
           ZIO.scoped {
             for {
-              consumer <- consumerZPool.get
+              // Note. The ZPool handles the release of resources automatically. So this Get doesn't lead to leaks
+              consumer <- consumerPool.get
               readMessageConfig = ReadMessageConfig(
                 topicName,
                 partitionGroup,
@@ -74,13 +75,13 @@ object KafkaRoutes {
                 )
             } yield readMessages
           }
-        )
+        }
         .map(_.flatten)
-      res = Response.json(
+      response = Response.json(
         LoadMessagesResponse(allMessages)
           .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
           .toString
       )
-    } yield res
+    } yield response
   }
 }
