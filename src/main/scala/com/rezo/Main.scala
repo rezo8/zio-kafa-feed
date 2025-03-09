@@ -7,7 +7,7 @@ import com.rezo.config.{
   ServerMetadataConfig
 }
 import com.rezo.exceptions.Exceptions.ConfigLoadException
-import com.rezo.httpServer.routes.{KafkaRoutesTwo, KafkaRoutesTwoLive}
+import com.rezo.httpServer.routes.KafkaRoutesLive
 import com.rezo.kafka.KafkaClientFactory
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import pureconfig.ConfigSource
@@ -29,31 +29,30 @@ object Main extends ZIOAppDefault {
   private val adminLayer: ZLayer[Any, Throwable, AdminClient] =
     KafkaClientFactory.makeKafkaAdminClient(config.consumerConfig)
 
-  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
+//  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
 
-  private val consumerPoolLayer: ZLayer[Scope, Throwable, ConsumerPool] =
-    ZLayer.fromZIO {
-      ZPool.make(
-        KafkaClientFactory.makeKafkaConsumerZio.provideLayer(
-          ZLayer.succeed(config.consumerConfig)
-        ),
-        config.readerConfig.consumerCount
-      )
-    }
+//  private val consumerPoolLayer: ZLayer[Scope, Throwable, ConsumerPool] =
+//    ZLayer.fromZIO {
+//      ZPool.make(
+//        KafkaClientFactory.makeKafkaConsumerZio.provideLayer(
+//          ZLayer.succeed(config.consumerConfig)
+//        ),
+//        config.readerConfig.consumerCount
+//      )
+//    }
 
   val appLayer: ZLayer[
-    Scope & Any,
+    Scope,
     Throwable,
-    AdminClient & ConsumerPool & ReaderConfig & Server
+    AdminClient & ReaderConfig & Server
   ] =
     adminLayer ++
-      consumerPoolLayer ++
       ZLayer.succeed(config.readerConfig) ++
       Server.defaultWithPort(serverMetadataConfig.port)
 
   override def run: ZIO[Scope, Throwable, Nothing] = {
     (for {
-      kafkaRoutes <- KafkaRoutesTwoLive.make()
+      kafkaRoutes <- KafkaRoutesLive.make()
       serverProc <- Server.serve(kafkaRoutes.routes)
     } yield { serverProc }).provideLayer(appLayer)
   }
