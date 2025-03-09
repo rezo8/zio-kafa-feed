@@ -1,86 +1,102 @@
 package com.rezo.httpServer.routes
 
-import com.rezo.Main.ConsumerPool
+import com.rezo.Main.{ConsumerPool, config}
 import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.LoadMessagesResponse
-import com.rezo.services.MessageReader
-import com.rezo.services.MessageReader.ReadMessageConfig
+import com.rezo.kafka.KafkaClientFactory
+import com.rezo.services.{MessageReader, MessageReaderLive}
 import io.circe.syntax.*
-import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.http.*
 import zio.kafka.admin.AdminClient
 import zio.{Scope, ZIO, ZLayer, ZPool}
 
-object KafkaRoutes {
+trait KafkaRoutes {
+  def routes: Routes[Any, Response]
+}
+
+final case class KafkaRoutesLive(
+    adminClient: AdminClient,
+    consumerPool: ConsumerPool,
+    readerConfig: ReaderConfig
+) extends KafkaRoutes {
   private val defaultCount = 10
-  def routes
-      : Routes[AdminClient & ConsumerPool & Scope & ReaderConfig, Response] =
-    Routes(
-      Method.GET / "topic" / zio.http.string("topicName") / zio.http.int(
-        "offset"
-      ) -> handler { (topicName: String, offset: Int, req: Request) =>
-        {
-          handleLoadMessage(topicName, offset, req).catchAll(error =>
-            ZIO.succeed(
-              Response
-                .error(Status.InternalServerError, message = error.getMessage)
+
+  override def routes: Routes[Any, Response] = Routes(
+    Method.GET / "topic" / string("topicName") / int("offset") -> handler {
+      (topicName: String, offset: Int, req: Request) =>
+        val count = req.url
+          .queryParams("count")
+          .headOption
+          .flatMap(_.toIntOption)
+          .getOrElse(defaultCount)
+        for {
+          res <- handleLoadMessage(topicName, offset, count, readerConfig)
+            .provide(
+              MessageReaderLive.layer,
+              ZLayer.succeed(adminClient),
+              ZLayer.succeed(consumerPool)
             )
-          )
-        }
-      }
-    )
+            .catchAll(error =>
+              ZIO.succeed(
+                Response.error(
+                  Status.InternalServerError,
+                  message = error.getMessage
+                )
+              )
+            )
+        } yield res
+    }
+  )
 
   private def handleLoadMessage(
       topicName: String,
       offset: Int,
-      req: Request
+      count: Int,
+      readerConfig: ReaderConfig
   ): ZIO[
-    ConsumerPool & AdminClient & Scope & ReaderConfig,
+    MessageReader,
     Throwable,
     Response
   ] = {
-    val count = req.url
-      .queryParams("count")
-      .headOption
-      .fold(defaultCount)(res => res.toIntOption.getOrElse(defaultCount))
-
     for {
-      adminClient <- ZIO.service[AdminClient]
-      consumerZPool <- ZIO.service[ConsumerPool]
-      readerConfig <- ZIO.service[ReaderConfig]
-      partitionCountOpt <- adminClient
-        .describeTopics(List(topicName))
-        .map(_.get(topicName).map(_.partitions.map(_.partition)))
-      partitions <- ZIO.attempt(partitionCountOpt.get)
-      partitionGroups = partitions
-        .grouped(
-          (partitions.size + readerConfig.parallelReads - 1) / readerConfig.parallelReads
-        )
-        .toSeq
-      allMessages <- ZIO
-        .foreachPar(partitionGroups)(partitionGroup =>
-          ZIO.scoped {
-            for {
-              consumer <- consumerZPool.get
-              readMessageConfig = ReadMessageConfig(
-                topicName,
-                partitionGroup,
-                offset,
-                count
-              )
-              readMessages <- MessageReader.readMessagesForPartitions
-                .provideLayer(
-                  ZLayer.succeed(consumer) ++ ZLayer.succeed(readMessageConfig)
-                )
-            } yield readMessages
-          }
-        )
-        .map(_.flatten)
-      res = Response.json(
-        LoadMessagesResponse(allMessages)
+      messages <- MessageReaderLive.readMessages(
+        readerConfig,
+        topicName,
+        offset,
+        count
+      )
+      response = Response.json(
+        LoadMessagesResponse(messages)
           .asJson(LoadMessagesResponse.loadMessagesResponseEncoder)
           .toString
       )
-    } yield res
+    } yield response
+  }
+}
+
+object KafkaRoutesLive {
+
+  val layer: ZLayer[
+    AdminClient & ReaderConfig & ConsumerPool,
+    Throwable,
+    KafkaRoutes
+  ] = {
+    ZLayer.fromFunction(KafkaRoutesLive(_, _, _))
+  }
+
+  // TODO potentially add ConsumerPool as a dependency.
+  def make(): ZIO[
+    ReaderConfig & Scope & AdminClient,
+    Nothing,
+    KafkaRoutesLive
+  ] = {
+    for {
+      adminClient <- ZIO.service[AdminClient]
+      consumerPool <- ZPool.make(
+        KafkaClientFactory.makeKafkaConsumer(config.consumerConfig),
+        config.readerConfig.consumerCount
+      )
+      readerConfig <- ZIO.service[ReaderConfig]
+    } yield KafkaRoutesLive(adminClient, consumerPool, readerConfig)
   }
 }

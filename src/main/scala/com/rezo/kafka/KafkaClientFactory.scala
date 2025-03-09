@@ -3,24 +3,15 @@ package com.rezo.kafka
 import com.rezo.config.KafkaConsumerConfig
 import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
 import org.apache.kafka.common.serialization.StringDeserializer
-import zio.kafka.admin.{AdminClient, AdminClientSettings}
-import zio.{ZIO, ZLayer}
+import zio.ZIO
 
 import java.util.Properties
 
 object KafkaClientFactory {
-  def makeKafkaAdminClient(
+  def makeKafkaConsumer(
       config: KafkaConsumerConfig
-  ): ZLayer[Any, Throwable, AdminClient] = {
-    ZLayer.scoped {
-      AdminClient.make(AdminClientSettings.apply(config.bootstrapServers))
-    }
-  }
-
-  val makeKafkaConsumerZio
-      : ZIO[KafkaConsumerConfig, Throwable, KafkaConsumer[String, String]] = {
+  ): ZIO[Any, Throwable, KafkaConsumer[String, String]] = {
     for {
-      config <- ZIO.service[KafkaConsumerConfig]
       consumer <- ZIO.attempt {
         val props = new Properties()
         props.put(
