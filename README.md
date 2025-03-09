@@ -24,8 +24,19 @@ around proved to be a fun challenge! Layers are not so scary it seems.
 ### IngestionJob
 
 - IngestionJob
+  - In charge of orchestrating the ingestion to Kafka
 - DataFetcher
+  - In charge of loading the data to publish to Kafka
 - Publisher
+  - In charge of actually publishing the data  to Kafka.
+
+### Main
+
+- Server (built in ZIO that takes in routes)
+- Kafka Routes
+  - In charge of exposing methods that deal with loading from Kafka
+- MessageReader
+  - In charge of reading the messages off of Kafka
 
 
 

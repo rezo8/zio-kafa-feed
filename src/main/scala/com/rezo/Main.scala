@@ -7,7 +7,7 @@ import com.rezo.config.{
   ServerMetadataConfig
 }
 import com.rezo.exceptions.Exceptions.ConfigLoadException
-import com.rezo.httpServer.routes.KafkaRoutes
+import com.rezo.httpServer.routes.{KafkaRoutesTwo, KafkaRoutesTwoLive}
 import com.rezo.kafka.KafkaClientFactory
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import pureconfig.ConfigSource
@@ -51,18 +51,10 @@ object Main extends ZIOAppDefault {
       ZLayer.succeed(config.readerConfig) ++
       Server.defaultWithPort(serverMetadataConfig.port)
 
-  private def startServer: ZIO[Scope, Throwable, Nothing] = {
-    Server
-      .serve(KafkaRoutes.routes)
-      .provideSomeLayer(appLayer)
-  }
-
-  override def run: ZIO[Any, Throwable, Int] = {
-    ZIO.scoped {
-      for {
-        _ <- ZIO.logInfo("Starting the server...")
-        _ <- startServer
-      } yield 1
-    }
+  override def run: ZIO[Scope, Throwable, Nothing] = {
+    (for {
+      kafkaRoutes <- KafkaRoutesTwoLive.make()
+      serverProc <- Server.serve(kafkaRoutes.routes)
+    } yield { serverProc }).provideLayer(appLayer)
   }
 }

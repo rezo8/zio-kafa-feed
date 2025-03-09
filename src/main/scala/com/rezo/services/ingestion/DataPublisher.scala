@@ -37,7 +37,7 @@ final case class DataPublisherLive(producer: Producer) extends DataPublisher {
         }
       endTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
       _ <- ZIO.logInfo(
-        s"Successfully published $successfulPublishes records in ${endTime - startTime} ms."
+        s"Successfully published $successfulPublishes records in ${endTime - startTime} ms to topic ${config.publisherConfig.topicName}."
       )
     } yield ()
 }
