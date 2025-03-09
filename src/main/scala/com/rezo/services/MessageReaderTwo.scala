@@ -33,6 +33,7 @@ private final case class MessageReaderTwoLive(
     adminClient: AdminClient,
     consumerPool: ConsumerPoolTwo
 ) extends MessageReaderTwo {
+
   def readMessages(
       readerConfig: ReaderConfig,
       topicName: String,
@@ -55,9 +56,7 @@ private final case class MessageReaderTwoLive(
         {
           ZIO.scoped {
             for {
-              consumer <- ZIO.acquireRelease(consumerPool.get)(x =>
-                consumerPool.invalidate(x)
-              ) // Ensuring that consumerPool invalidates it once it's done (this happens for free I think but just to be explicit)
+              consumer <- consumerPool.get
               messageReaderConfig = MessageReaderConfig(
                 topicName,
                 partitionGroup,
@@ -124,9 +123,34 @@ private final case class MessageReaderTwoLive(
   ) = {
     for {
       consumer <- ZIO.service[KafkaConsumer[String, String]]
+
+      // Log before assigning the partition
+      _ <- ZIO.logInfo(s"Attempting to assign partition: $partition")
       _ <- ZIO.attempt(consumer.assign(List(partition).asJava))
+
+      // Log assigned partitions after assignment
+      assignedPartitions <- ZIO.attempt(consumer.assignment())
+      _ <- ZIO.logInfo(s"Assigned partitions: $assignedPartitions")
+
+      // Log before seeking
+      _ <- ZIO.logInfo(s"Seeking partition: $partition to offset: $offset")
       _ <- ZIO.attempt(consumer.seek(partition, offset))
-      recordsToProc <- ZIO.attempt(consumer.poll(Duration.ofMillis(1000)))
+
+      // Log current position after seeking
+      position <- ZIO.attempt(consumer.position(partition))
+      _ <- ZIO.logInfo(s"Consumer position for $partition: $position")
+
+      // Attempt to poll and log result
+      recordsToProc <- ZIO
+        .attempt(consumer.poll(Duration.ofMillis(5000)))
+        .tapError(e => {
+          ZIO.logError(s"Error polling Kafka: ${e.getMessage}")
+        })
+
+      _ <- ZIO.logInfo(
+        s"Polling complete. Read ${recordsToProc.count()} messages from partition $partition at offset $offset"
+      )
+
       _ <- ZIO.logInfo(
         s"Reading ${recordsToProc.count()} messages off of partition ${partition} and offset ${offset}"
       )
