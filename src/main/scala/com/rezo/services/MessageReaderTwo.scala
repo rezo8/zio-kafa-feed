@@ -63,11 +63,12 @@ private final case class MessageReaderTwoLive(
                 offset,
                 count
               )
+
               readMessages <- readMessagesForPartitions(
                 messageReaderConfig,
                 consumer
               )
-            } yield readMessages
+            } yield List()
           }
         }
       }
@@ -123,7 +124,6 @@ private final case class MessageReaderTwoLive(
   ) = {
     for {
       consumer <- ZIO.service[KafkaConsumer[String, String]]
-
       // Log before assigning the partition
       _ <- ZIO.logInfo(s"Attempting to assign partition: $partition")
       _ <- ZIO.attempt(consumer.assign(List(partition).asJava))
