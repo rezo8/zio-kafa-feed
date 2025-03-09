@@ -8,11 +8,10 @@ import com.rezo.config.{
 }
 import com.rezo.exceptions.Exceptions.ConfigLoadException
 import com.rezo.httpServer.routes.KafkaRoutesLive
-import com.rezo.kafka.KafkaClientFactory
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import pureconfig.ConfigSource
 import zio.http.Server
-import zio.kafka.admin.AdminClient
+import zio.kafka.admin.{AdminClient, AdminClientSettings}
 import zio.{Scope, ZIO, ZIOAppDefault, ZLayer, ZPool}
 
 object Main extends ZIOAppDefault {
@@ -27,33 +26,29 @@ object Main extends ZIOAppDefault {
     config.serverMetadataConfig
 
   private val adminLayer: ZLayer[Any, Throwable, AdminClient] =
-    KafkaClientFactory.makeKafkaAdminClient(config.consumerConfig)
+    ZLayer.scoped {
+      AdminClient.make(
+        AdminClientSettings.apply(config.consumerConfig.bootstrapServers)
+      )
+    }
 
-//  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
-
-//  private val consumerPoolLayer: ZLayer[Scope, Throwable, ConsumerPool] =
-//    ZLayer.fromZIO {
-//      ZPool.make(
-//        KafkaClientFactory.makeKafkaConsumerZio.provideLayer(
-//          ZLayer.succeed(config.consumerConfig)
-//        ),
-//        config.readerConfig.consumerCount
-//      )
-//    }
+  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
 
   val appLayer: ZLayer[
     Scope,
     Throwable,
-    AdminClient & ReaderConfig & Server
-  ] =
+    AdminClient & ReaderConfig & Server & Scope
+  ] = {
     adminLayer ++
       ZLayer.succeed(config.readerConfig) ++
-      Server.defaultWithPort(serverMetadataConfig.port)
+      Server.defaultWithPort(serverMetadataConfig.port) ++
+      ZLayer.service[Scope]
+  }
 
   override def run: ZIO[Scope, Throwable, Nothing] = {
     (for {
       kafkaRoutes <- KafkaRoutesLive.make()
       serverProc <- Server.serve(kafkaRoutes.routes)
-    } yield { serverProc }).provideLayer(appLayer)
+    } yield serverProc).provideLayer(appLayer)
   }
 }

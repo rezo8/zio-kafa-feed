@@ -2,7 +2,7 @@ package com.rezo
 
 import com.rezo.config.{DerivedConfig, IngestionJobConfig}
 import com.rezo.exceptions.Exceptions.ConfigLoadException
-import com.rezo.services.ingestion._
+import com.rezo.services.ingestion.*
 import pureconfig.ConfigSource
 import zio.*
 import zio.kafka.producer.{Producer, ProducerSettings}

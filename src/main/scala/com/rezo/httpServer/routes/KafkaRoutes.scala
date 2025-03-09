@@ -1,12 +1,14 @@
 package com.rezo.httpServer.routes
 
+import com.rezo.Main.{ConsumerPool, config}
 import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.LoadMessagesResponse
+import com.rezo.kafka.KafkaClientFactory
 import com.rezo.services.{MessageReader, MessageReaderLive}
 import io.circe.syntax.*
 import zio.http.*
 import zio.kafka.admin.AdminClient
-import zio.{ZIO, ZLayer}
+import zio.{Scope, ZIO, ZLayer, ZPool}
 
 trait KafkaRoutes {
   def routes: Routes[Any, Response]
@@ -14,6 +16,7 @@ trait KafkaRoutes {
 
 final case class KafkaRoutesLive(
     adminClient: AdminClient,
+    consumerPool: ConsumerPool,
     readerConfig: ReaderConfig
 ) extends KafkaRoutes {
   private val defaultCount = 10
@@ -30,7 +33,8 @@ final case class KafkaRoutesLive(
           res <- handleLoadMessage(topicName, offset, count, readerConfig)
             .provide(
               MessageReaderLive.layer,
-              ZLayer.succeed(adminClient)
+              ZLayer.succeed(adminClient),
+              ZLayer.succeed(consumerPool)
             )
             .catchAll(error =>
               ZIO.succeed(
@@ -73,21 +77,26 @@ final case class KafkaRoutesLive(
 object KafkaRoutesLive {
 
   val layer: ZLayer[
-    AdminClient & ReaderConfig,
+    AdminClient & ReaderConfig & ConsumerPool,
     Throwable,
     KafkaRoutes
   ] = {
-    ZLayer.fromFunction(KafkaRoutesLive(_, _))
+    ZLayer.fromFunction(KafkaRoutesLive(_, _, _))
   }
 
+  // TODO potentially add ConsumerPool as a dependency.
   def make(): ZIO[
-    ReaderConfig & AdminClient,
+    ReaderConfig & Scope & AdminClient,
     Nothing,
     KafkaRoutesLive
   ] = {
     for {
       adminClient <- ZIO.service[AdminClient]
+      consumerPool <- ZPool.make(
+        KafkaClientFactory.makeKafkaConsumer(config.consumerConfig),
+        config.readerConfig.consumerCount
+      )
       readerConfig <- ZIO.service[ReaderConfig]
-    } yield KafkaRoutesLive(adminClient, readerConfig)
+    } yield KafkaRoutesLive(adminClient, consumerPool, readerConfig)
   }
 }
