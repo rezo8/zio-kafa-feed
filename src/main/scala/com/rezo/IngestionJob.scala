@@ -1,34 +1,40 @@
 package com.rezo
 
-import com.rezo.config.{DerivedConfig, IngestionJobConfig}
-import com.rezo.exceptions.Exceptions.ConfigLoadException
+import com.rezo.config.IngestionJobConfig
 import com.rezo.services.ingestion.*
-import pureconfig.ConfigSource
-import zio.*
+import zio.config.typesafe.TypesafeConfigProvider.*
 import zio.kafka.producer.{Producer, ProducerSettings}
+import zio.{config, *}
 
 object IngestionJob extends ZIOAppDefault {
-  // TODO maybe there's a ZIO-y config loading.
-  val config: IngestionJobConfig = ConfigSource.default
-    .at("ingestion-job")
-    .load[DerivedConfig]
-    .getOrElse(throw new ConfigLoadException())
-    .asInstanceOf[IngestionJobConfig]
 
-  private val filePath = "random-people-data.json"
+  override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
+    Runtime.setConfigProvider(fromResourcePath())
 
-  private val producerLayer: ZLayer[Any, Throwable, Producer] =
-    ZLayer.scoped(
-      Producer.make(ProducerSettings(config.publisherConfig.bootstrapServers))
-    )
+  private val configLayer: ZLayer[Any, Throwable, IngestionJobConfig] =
+    ZLayer.fromZIO(ZIO.config[IngestionJobConfig].orDie)
+
+  private val producerLayer: ZLayer[IngestionJobConfig, Throwable, Producer] =
+    ZLayer.scoped {
+      for {
+        config <- ZIO.service[IngestionJobConfig]
+        producer <- Producer.make(
+          ProducerSettings(config.producerConfig.bootstrapServers)
+        )
+      } yield producer
+    }
 
   override def run: ZIO[Any, Throwable, Unit] = {
-    IngestionLogicLive.run.provide(
-      IngestionLogicLive.layer,
-      DataFetcherLive.layer,
-      DataPublisherLive.layer,
-      ZLayer.succeed(filePath),
-      producerLayer
-    )
+    for {
+      config <- ZIO.config[IngestionJobConfig]
+      _ <- ZIO.logInfo(s"Loaded configuration: $config")
+      _ <- IngestionLogicLive.run.provide(
+        IngestionLogicLive.layer,
+        DataFetcherLive.layer,
+        DataPublisherLive.layer,
+        configLayer >>> producerLayer,
+        configLayer
+      )
+    } yield ()
   }
 }

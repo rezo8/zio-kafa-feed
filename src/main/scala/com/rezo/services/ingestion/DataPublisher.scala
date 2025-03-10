@@ -1,6 +1,6 @@
 package com.rezo.services.ingestion
 
-import com.rezo.IngestionJob.config
+import com.rezo.config.IngestionJobConfig
 import com.rezo.objects.Person
 import org.apache.kafka.clients.producer.ProducerRecord
 import zio.kafka.producer.Producer
@@ -14,7 +14,10 @@ trait DataPublisher {
   def publishPeople(people: List[Person]): ZIO[Any, Throwable, Unit]
 }
 
-final case class DataPublisherLive(producer: Producer) extends DataPublisher {
+private final case class DataPublisherLive(
+    producer: Producer,
+    config: IngestionJobConfig
+) extends DataPublisher {
 
   override def publishPeople(people: List[Person]): ZIO[Any, Throwable, Unit] =
     for {
@@ -23,7 +26,7 @@ final case class DataPublisherLive(producer: Producer) extends DataPublisher {
         .fromIterable(as = people, chunkSize = config.batchSize)
         .map(person => {
           ProducerRecord(
-            config.publisherConfig.topicName,
+            config.producerConfig.topicName,
             person._id,
             person
           )
@@ -32,19 +35,17 @@ final case class DataPublisherLive(producer: Producer) extends DataPublisher {
         .tapError(e =>
           ZIO.logError(s"Failed to publish record: ${e.getMessage}")
         )
-        .runFold(0) { (acc, _) =>
-          acc + 1
-        }
+        .runFold(0) { (acc, _) => acc + 1 }
       endTime <- Clock.currentTime(TimeUnit.MILLISECONDS)
       _ <- ZIO.logInfo(
-        s"Successfully published $successfulPublishes records in ${endTime - startTime} ms to topic ${config.publisherConfig.topicName}."
+        s"Successfully published $successfulPublishes records in ${endTime - startTime} ms to topic ${config.producerConfig.topicName}."
       )
     } yield ()
 }
 
 object DataPublisherLive {
-  val layer: ZLayer[Producer, Throwable, DataPublisher] = {
-    ZLayer.fromFunction(DataPublisherLive(_))
+  val layer: ZLayer[Producer & IngestionJobConfig, Throwable, DataPublisher] = {
+    ZLayer.fromFunction(DataPublisherLive(_, _))
   }
 
   def publishPeople(

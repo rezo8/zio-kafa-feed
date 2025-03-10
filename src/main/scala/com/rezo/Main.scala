@@ -1,54 +1,53 @@
 package com.rezo
 
-import com.rezo.config.{
-  DerivedConfig,
-  ReaderConfig,
-  ServerConfig,
-  ServerMetadataConfig
-}
-import com.rezo.exceptions.Exceptions.ConfigLoadException
+import com.rezo.config.ServerConfig
 import com.rezo.httpServer.routes.KafkaRoutesLive
-import org.apache.kafka.clients.consumer.KafkaConsumer
-import pureconfig.ConfigSource
+import zio.config.typesafe.TypesafeConfigProvider
+import zio.config.typesafe.TypesafeConfigProvider.fromResourcePath
 import zio.http.Server
 import zio.kafka.admin.{AdminClient, AdminClientSettings}
-import zio.{Scope, ZIO, ZIOAppDefault, ZLayer, ZPool}
+import zio.{Scope, ZIO, ZIOAppDefault, ZLayer, config, *}
 
 object Main extends ZIOAppDefault {
 
-  val config: ServerConfig = ConfigSource.default
-    .at("server")
-    .load[DerivedConfig]
-    .getOrElse(throw new ConfigLoadException())
-    .asInstanceOf[ServerConfig]
+  override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
+    Runtime.setConfigProvider(fromResourcePath())
 
-  private val serverMetadataConfig: ServerMetadataConfig =
-    config.serverMetadataConfig
+  private val configLayer: ZLayer[Any, Throwable, ServerConfig] =
+    ZLayer.fromZIO(ZIO.config[ServerConfig].orDie)
 
-  private val adminLayer: ZLayer[Any, Throwable, AdminClient] =
-    ZLayer.scoped {
-      AdminClient.make(
-        AdminClientSettings.apply(config.consumerConfig.bootstrapServers)
-      )
+  private val adminLayer: ZLayer[ServerConfig & Scope, Throwable, AdminClient] =
+    ZLayer.fromZIO {
+      for {
+        config <- ZIO.service[ServerConfig]
+        client <- AdminClient.make(
+          AdminClientSettings(config.consumerConfig.bootstrapServers)
+        )
+      } yield client
     }
 
-  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
-
-  val appLayer: ZLayer[
+  private val appLayer: ZLayer[
     Scope,
     Throwable,
-    AdminClient & ReaderConfig & Server & Scope
+    AdminClient & ServerConfig
   ] = {
-    adminLayer ++
-      ZLayer.succeed(config.readerConfig) ++
-      Server.defaultWithPort(serverMetadataConfig.port) ++
-      ZLayer.service[Scope]
+    (configLayer >>> adminLayer) ++ configLayer
   }
 
   override def run: ZIO[Scope, Throwable, Nothing] = {
-    (for {
-      kafkaRoutes <- KafkaRoutesLive.make()
-      serverProc <- Server.serve(kafkaRoutes.routes)
-    } yield serverProc).provideLayer(appLayer)
+    ZIO
+      .scoped {
+        for {
+          config <- ZIO.service[ServerConfig]
+          kafkaRoutes <- KafkaRoutesLive.make()
+          serverProc <- Server
+            .serve(kafkaRoutes.routes)
+            .flatMap(port =>
+              ZIO.debug(s"Sever started on http://localhost:$port") *> ZIO.never
+            )
+            .provide(Server.configured())
+        } yield serverProc
+      }
+      .provideLayer(appLayer)
   }
 }
