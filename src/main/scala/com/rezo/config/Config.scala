@@ -1,29 +1,79 @@
 package com.rezo.config
 
-import pureconfig.*
-import pureconfig.generic.derivation.*
+import zio.*
+import zio.config.magnolia.deriveConfig
+import zio.config.typesafe.TypesafeConfigProvider.*
 
-sealed trait DerivedConfig derives ConfigReader
+case class IngestionJobConfig(
+    producerConfig: ProducerConfig,
+    batchSize: Int,
+    filePath: String
+)
+
+object IngestionJobConfig {
+  implicit val config: Config[IngestionJobConfig] = {
+    {
+      Config.int("batchSize").withDefault(100) zip
+        Config.string("filePath").withDefault("random-people-data.json") zip
+        ProducerConfig.config.nested("producerConfig")
+    }.map { case (batchSize, filePath, producerConfig) =>
+      IngestionJobConfig(producerConfig, batchSize, filePath)
+    }.nested("ingestionJob")
+  }
+}
 
 case class ServerConfig(
-    serverMetadataConfig: ServerMetadataConfig,
+    consumerConfig: KafkaConsumerConfig,
     readerConfig: ReaderConfig,
-    consumerConfig: KafkaConsumerConfig
-) extends DerivedConfig
+    serverMetadataConfig: ServerMetadataConfig
+)
+
+object ServerConfig {
+  implicit val config: Config[ServerConfig] = {
+    {
+      KafkaConsumerConfig.config.nested("consumer") zip
+        ReaderConfig.config.nested("reader") zip
+        ServerMetadataConfig.config.nested("serverMetadata")
+    }.map { case (consumerConfig, readerConfig, serverMetadataConfig) =>
+      ServerConfig(consumerConfig, readerConfig, serverMetadataConfig)
+    }.nested("server")
+  }
+}
+
 case class ServerMetadataConfig(port: Int)
+object ServerMetadataConfig {
+  implicit val config: Config[ServerMetadataConfig] = {
+    deriveConfig[ServerMetadataConfig]
+  }
+}
+
 case class KafkaConsumerConfig(
     bootstrapServers: List[String],
     topicName: String,
     maxPollRecords: Int
 )
 
+object KafkaConsumerConfig {
+  implicit val config: Config[KafkaConsumerConfig] = {
+    deriveConfig[KafkaConsumerConfig]
+  }
+}
+
 case class ReaderConfig(
     consumerCount: Int,
     parallelReads: Int
 )
 
+object ReaderConfig {
+  implicit val config: Config[ReaderConfig] = {
+    deriveConfig[ReaderConfig]
+  }
+}
+
 case class ProducerConfig(topicName: String, bootstrapServers: List[String])
-case class IngestionJobConfig(
-    publisherConfig: ProducerConfig,
-    batchSize: Int
-) extends DerivedConfig
+
+object ProducerConfig {
+  implicit val config: Config[ProducerConfig] = {
+    deriveConfig[ProducerConfig]
+  }
+}

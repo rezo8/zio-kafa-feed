@@ -1,8 +1,8 @@
 package com.rezo.services
 
-import com.rezo.Main.ConsumerPool
 import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.Message
+import com.rezo.util.HelperTypes.ConsumerPool
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.TopicPartition
 import zio.kafka.admin.AdminClient

@@ -1,10 +1,10 @@
 package com.rezo.httpServer.routes
 
-import com.rezo.Main.{ConsumerPool, config}
-import com.rezo.config.ReaderConfig
+import com.rezo.config.{ReaderConfig, ServerConfig}
 import com.rezo.httpServer.Responses.LoadMessagesResponse
 import com.rezo.kafka.KafkaClientFactory
 import com.rezo.services.{MessageReader, MessageReaderLive}
+import com.rezo.util.HelperTypes.ConsumerPool
 import io.circe.syntax.*
 import zio.http.*
 import zio.kafka.admin.AdminClient
@@ -17,7 +17,7 @@ trait KafkaRoutes {
 final case class KafkaRoutesLive(
     adminClient: AdminClient,
     consumerPool: ConsumerPool,
-    readerConfig: ReaderConfig
+    config: ServerConfig
 ) extends KafkaRoutes {
   private val defaultCount = 10
 
@@ -30,7 +30,12 @@ final case class KafkaRoutesLive(
           .flatMap(_.toIntOption)
           .getOrElse(defaultCount)
         for {
-          res <- handleLoadMessage(topicName, offset, count, readerConfig)
+          res <- handleLoadMessage(
+            topicName,
+            offset,
+            count,
+            config.readerConfig
+          )
             .provide(
               MessageReaderLive.layer,
               ZLayer.succeed(adminClient),
@@ -77,7 +82,7 @@ final case class KafkaRoutesLive(
 object KafkaRoutesLive {
 
   val layer: ZLayer[
-    AdminClient & ReaderConfig & ConsumerPool,
+    AdminClient & ServerConfig & ConsumerPool,
     Throwable,
     KafkaRoutes
   ] = {
@@ -86,17 +91,17 @@ object KafkaRoutesLive {
 
   // TODO potentially add ConsumerPool as a dependency.
   def make(): ZIO[
-    ReaderConfig & Scope & AdminClient,
+    ServerConfig & Scope & AdminClient,
     Nothing,
     KafkaRoutesLive
   ] = {
     for {
+      config <- ZIO.service[ServerConfig]
       adminClient <- ZIO.service[AdminClient]
       consumerPool <- ZPool.make(
         KafkaClientFactory.makeKafkaConsumer(config.consumerConfig),
         config.readerConfig.consumerCount
       )
-      readerConfig <- ZIO.service[ReaderConfig]
-    } yield KafkaRoutesLive(adminClient, consumerPool, readerConfig)
+    } yield KafkaRoutesLive(adminClient, consumerPool, config)
   }
 }

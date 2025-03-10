@@ -1,5 +1,6 @@
 package com.rezo.services.ingestion
 
+import com.rezo.config.IngestionJobConfig
 import com.rezo.exceptions.Exceptions.{FailedToParseFile, FailedToReadFile}
 import com.rezo.objects.{CtRoot, Person}
 import io.circe.parser.*
@@ -10,13 +11,12 @@ trait DataFetcher {
   def fetchPeople(): ZIO[Any, Throwable, List[Person]]
 }
 
-type FilePath = String
-
-final case class DataFetcherLive(filePath: FilePath) extends DataFetcher {
+final case class DataFetcherLive(config: IngestionJobConfig)
+    extends DataFetcher {
   override def fetchPeople(): ZIO[Any, Throwable, List[Person]] = {
     for {
       jsonString <- ZStream
-        .fromResource(filePath)
+        .fromResource(config.filePath)
         .via(ZPipeline.utf8Decode)
         .runCollect
         .map(_.mkString)
@@ -31,7 +31,7 @@ final case class DataFetcherLive(filePath: FilePath) extends DataFetcher {
 }
 
 object DataFetcherLive {
-  val layer: ZLayer[FilePath, Throwable, DataFetcher] = {
+  val layer: ZLayer[IngestionJobConfig, Throwable, DataFetcher] = {
     ZLayer.fromFunction(DataFetcherLive(_))
   }
 
