@@ -2,7 +2,6 @@ package com.rezo
 
 import com.rezo.config.ServerConfig
 import com.rezo.httpServer.routes.KafkaRoutesLive
-import org.apache.kafka.clients.consumer.KafkaConsumer
 import zio.config.typesafe.TypesafeConfigProvider
 import zio.config.typesafe.TypesafeConfigProvider.fromResourcePath
 import zio.http.Server
@@ -43,9 +42,10 @@ object Main extends ZIOAppDefault {
           kafkaRoutes <- KafkaRoutesLive.make()
           serverProc <- Server
             .serve(kafkaRoutes.routes)
-            .provideLayer(
-              Server.defaultWithPort(config.serverMetadataConfig.port)
+            .flatMap(port =>
+              ZIO.debug(s"Sever started on http://localhost:$port") *> ZIO.never
             )
+            .provide(Server.configured())
         } yield serverProc
       }
       .provideLayer(appLayer)

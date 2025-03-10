@@ -24,26 +24,17 @@ object IngestionJobConfig {
 
 case class ServerConfig(
     consumerConfig: KafkaConsumerConfig,
-    readerConfig: ReaderConfig,
-    serverMetadataConfig: ServerMetadataConfig
+    readerConfig: ReaderConfig
 )
 
 object ServerConfig {
   implicit val config: Config[ServerConfig] = {
     {
       KafkaConsumerConfig.config.nested("consumer") zip
-        ReaderConfig.config.nested("reader") zip
-        ServerMetadataConfig.config.nested("serverMetadata")
-    }.map { case (consumerConfig, readerConfig, serverMetadataConfig) =>
-      ServerConfig(consumerConfig, readerConfig, serverMetadataConfig)
+        ReaderConfig.config.nested("reader")
+    }.map { case (consumerConfig, readerConfig) =>
+      ServerConfig(consumerConfig, readerConfig)
     }.nested("server")
-  }
-}
-
-case class ServerMetadataConfig(port: Int)
-object ServerMetadataConfig {
-  implicit val config: Config[ServerMetadataConfig] = {
-    deriveConfig[ServerMetadataConfig]
   }
 }
 
