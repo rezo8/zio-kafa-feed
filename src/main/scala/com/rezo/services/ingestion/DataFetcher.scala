@@ -7,12 +7,6 @@ import io.circe.parser.*
 import zio.*
 import zio.stream.*
 
-// TODO. It might be better to just have the data fetcher get Json and have
-//          consumers deal with parsing. That way if we have mixed data, we can have consumers
-//          deal with their domain. Although better practice is parse, identify topic and publish.
-//       This is basically done via the custom decoder, but there is potentially another layer of
-//        service abstraction that is possible.
-
 trait DataFetcher {
   def fetchData[A](
       filePath: String

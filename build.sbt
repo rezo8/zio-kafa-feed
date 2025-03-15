@@ -23,6 +23,7 @@ lazy val root = project
       "dev.zio" %% "zio-config-typesafe" % "4.0.3",
       "dev.zio" %% "zio-config-magnolia" % "4.0.3",
       "dev.zio" %% "zio-test" % zioVersion,
-      "dev.zio" %% "zio-test-sbt" % zioVersion
+      "dev.zio" %% "zio-test-sbt" % zioVersion,
+      "dev.zio" %% "zio-kafka-testkit" % "2.11.0"
     )
   )
