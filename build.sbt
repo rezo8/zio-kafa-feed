@@ -12,7 +12,7 @@ lazy val root = project
     libraryDependencies ++= Seq(
       "com.typesafe" % "config" % "1.4.3",
       "dev.zio" %% "zio" % zioVersion,
-      "dev.zio" %% "zio-http" % "3.0.1",
+      "dev.zio" %% "zio-http" % "3.1.0",
       "dev.zio" %% "zio-nio" % "2.0.2",
       "dev.zio" %% "zio-streams" % zioVersion,
       "dev.zio" %% "zio-kafka" % "2.11.0",
@@ -21,6 +21,9 @@ lazy val root = project
       "io.circe" %% "circe-parser" % circeVersion,
       "org.apache.kafka" % "kafka-clients" % "3.9.0",
       "dev.zio" %% "zio-config-typesafe" % "4.0.3",
-      "dev.zio" %% "zio-config-magnolia" % "4.0.3"
+      "dev.zio" %% "zio-config-magnolia" % "4.0.3",
+      "dev.zio" %% "zio-test" % zioVersion,
+      "dev.zio" %% "zio-test-sbt" % zioVersion,
+      "dev.zio" %% "zio-kafka-testkit" % "2.11.0"
     )
   )

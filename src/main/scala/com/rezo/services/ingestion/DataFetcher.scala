@@ -1,40 +1,46 @@
 package com.rezo.services.ingestion
 
-import com.rezo.config.IngestionJobConfig
 import com.rezo.exceptions.Exceptions.{FailedToParseFile, FailedToReadFile}
-import com.rezo.objects.{CtRoot, Person}
+import com.rezo.objects.CtRoot
+import io.circe.Decoder
 import io.circe.parser.*
 import zio.*
 import zio.stream.*
 
 trait DataFetcher {
-  def fetchPeople(): ZIO[Any, Throwable, List[Person]]
+  def fetchData[A](
+      filePath: String
+  )(implicit decoder: Decoder[A]): ZIO[Any, Throwable, List[Decoder.Result[A]]]
 }
 
-final case class DataFetcherLive(config: IngestionJobConfig)
-    extends DataFetcher {
-  override def fetchPeople(): ZIO[Any, Throwable, List[Person]] = {
+final case class DataFetcherLive() extends DataFetcher {
+  override def fetchData[A](
+      filePath: String
+  )(implicit
+      decoder: Decoder[A]
+  ): ZIO[Any, Throwable, List[Decoder.Result[A]]] = {
     for {
       jsonString <- ZStream
-        .fromResource(config.filePath)
+        .fromResource(filePath)
         .via(ZPipeline.utf8Decode)
         .runCollect
         .map(_.mkString)
         .mapError(e => FailedToReadFile(e))
-      parsedPeople <- ZIO
+      parsedObjects <- ZIO
         .fromEither(parse(jsonString).flatMap(_.as[CtRoot]))
         .mapError(e => FailedToParseFile(e))
-        .map(_.ctRoot.map(_.as[Person]))
-      people = parsedPeople.collect { case Right(person) => person }
-    } yield people
+        .map(_.ctRoot.map(_.as[A]))
+    } yield parsedObjects
   }
 }
 
 object DataFetcherLive {
-  val layer: ZLayer[IngestionJobConfig, Throwable, DataFetcher] = {
-    ZLayer.fromFunction(DataFetcherLive(_))
+  val layer: ZLayer[Any, Throwable, DataFetcher] = {
+    ZLayer.succeed(DataFetcherLive())
   }
 
-  def fetchPeople(): ZIO[DataFetcher, Throwable, List[Person]] =
-    ZIO.serviceWithZIO(_.fetchPeople())
+  def fetchData[A](filePath: String)(implicit
+      decoder: Decoder[A]
+  ): ZIO[DataFetcher, Throwable, List[Decoder.Result[A]]] =
+    ZIO.serviceWithZIO(_.fetchData(filePath)(decoder))
 }

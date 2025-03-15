@@ -1,0 +1,9 @@
+{
+	"ctRoot": [
+			{ "foo": "alpha", "bar": 10 },
+			{ "foo": "beta", "bar": 20 },
+			{ "foo": "gamma" },
+			{ "foo": "delta", "bar": "wrong_type" },
+			{ "foo": "epsilon", "bar": 50 }
+	]
+}
