@@ -1,8 +1,8 @@
 package com.rezo.util
 
-import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.clients.consumer.Consumer
 import zio.ZPool
 
 object HelperTypes {
-  type ConsumerPool = ZPool[Throwable, KafkaConsumer[String, String]]
+  type ConsumerPool = ZPool[Throwable, Consumer[String, String]]
 }

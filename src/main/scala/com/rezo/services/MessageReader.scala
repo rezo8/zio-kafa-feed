@@ -3,7 +3,7 @@ package com.rezo.services
 import com.rezo.config.ReaderConfig
 import com.rezo.httpServer.Responses.Message
 import com.rezo.util.HelperTypes.ConsumerPool
-import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.clients.consumer.Consumer
 import org.apache.kafka.common.TopicPartition
 import zio.kafka.admin.AdminClient
 import zio.stream.ZStream
@@ -71,7 +71,7 @@ private final case class MessageReaderLive(
   }
 
   private def readCountMessagesFromPartition(
-      consumer: KafkaConsumer[String, String],
+      consumer: Consumer[String, String],
       partition: TopicPartition,
       offset: Int,
       count: Int,
@@ -95,7 +95,7 @@ private final case class MessageReaderLive(
   }
 
   private def consumeOffPartition(
-      consumer: KafkaConsumer[String, String],
+      consumer: Consumer[String, String],
       partition: TopicPartition,
       offset: Int,
       count: Int
